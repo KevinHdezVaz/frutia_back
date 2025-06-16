@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\MealPlan;
 use App\Models\UserProfile;
 use Laravel\Sanctum\HasApiTokens;
 use Illuminate\Notifications\Notifiable;
@@ -19,6 +20,8 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'firebase_uid', // Añadido para Google Sign-In
+
     ];
 
     /**
@@ -44,4 +47,15 @@ class User extends Authenticatable
     {
         return $this->hasOne(UserProfile::class);
     }
+
+    /**
+     * Define la relación: un Usuario tiene un Plan de Comidas activo.
+     */
+    public function activePlan()
+    {
+        return $this->hasOne(MealPlan::class)->where('is_active', true);
+    }
+
+
+    
 }

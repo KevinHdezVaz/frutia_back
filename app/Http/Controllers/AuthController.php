@@ -7,12 +7,29 @@ use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
+use Kreait\Firebase\Auth as FirebaseAuth;
+use Illuminate\Support\Facades\Validator;
+use Kreait\Firebase\Factory;
 
 class AuthController extends Controller
 {
     /**
      * Registra un nuevo usuario.
      */
+    public function __construct()
+    {
+        // Configuración de Firebase
+        $serviceAccountPath = storage_path('app/firebase/frutia-fd201-firebase-adminsdk-fbsvc-46154c6523.json');
+        
+        if (!file_exists($serviceAccountPath)) {
+            throw new \RuntimeException("Archivo de configuración de Firebase no encontrado");
+        }
+
+        $this->firebaseAuth = (new Factory)
+            ->withServiceAccount($serviceAccountPath)
+            ->createAuth();
+    }
+
     public function register(Request $request)
     {
         // 1. Validar los datos básicos para el registro.
@@ -62,6 +79,117 @@ class AuthController extends Controller
     }
 
  
+
+
+    public function googleLogin(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'id_token' => 'required|string',
+            ]);
+    
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+    
+            $idToken = $request->input('id_token');
+            
+            \Log::info("Token recibido: " . substr($idToken, 0, 30) . "...");
+    
+            try {
+                $verifiedIdToken = $this->firebaseAuth->verifyIdToken($idToken, true);
+                $claims = $verifiedIdToken->claims();
+                
+                $firebaseUid = $claims->get('sub');
+                $email = $claims->get('email');
+                $name = $claims->get('name') ?? 'Usuario Google';
+                $audience = $claims->get('aud');
+    
+                \Log::info("Token decodificado:", [
+                    'issuer' => $claims->get('iss'),
+                    'audience' => $audience,
+                    'email' => $email,
+                    'firebase_uid' => $firebaseUid
+                ]);
+    
+                $serviceAccount = json_decode(file_get_contents(
+                    storage_path('app/firebase/frutia-fd201-firebase-adminsdk-fbsvc-46154c6523.json')
+                ), true);
+                
+                $expectedAudience = $serviceAccount['project_id'] ?? null;
+                
+                if (!$expectedAudience) {
+                    throw new \Exception("Project ID no configurado en service account");
+                }
+    
+                $audienceMatch = false;
+                if (is_array($audience)) {
+                    $audienceMatch = in_array($expectedAudience, $audience);
+                } else {
+                    $audienceMatch = ($audience === $expectedAudience);
+                }
+    
+                if (!$audienceMatch) {
+                    throw new \Exception(sprintf(
+                        "Audience no coincide. Esperado: %s, Recibido: %s",
+                        $expectedAudience,
+                        is_array($audience) ? json_encode($audience) : $audience
+                    ));
+                }
+    
+                $user = User::firstOrCreate(
+                    ['email' => $email],
+                    [
+                        'name' => $name,
+                        'password' => Hash::make(uniqid()),
+                        'firebase_uid' => $firebaseUid,
+                        'auth_provider' => 'google'
+                    ]
+                );
+    
+                
+                $token = $user->createToken('auth_token')->plainTextToken;
+    
+                return response()->json([
+                    'success' => true,
+                    'user' => [
+                        'id' => $user->id,
+                        'name' => $user->nombre,
+                        'email' => $user->email,
+                    ],
+                    'token' => $token,
+                ]);
+    
+            } catch (\Throwable $e) {
+                \Log::error("Error al verificar token:", [
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
+                    'token_sample' => substr($idToken, 0, 50)
+                ]);
+                
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Error en verificación de token',
+                    'error' => $e->getMessage(),
+                ], 401);
+            }
+    
+        } catch (\Exception $e) {
+            \Log::error("Error general en googleLogin: " . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error en autenticación con Google',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+    
+
+
+    
     public function logout(Request $request)
     {
         $request->user()->tokens()->delete();
@@ -70,12 +198,12 @@ class AuthController extends Controller
     }
  
     public function profile(Request $request)
-    {
-        // Carga al usuario JUNTO CON su relación de perfil.
-        // Si el usuario no ha llenado el onboarding, 'profile' será null.
-        return response()->json($request->user()->load('profile'));
-    }
-     
+{
+    // Cargamos el usuario con su perfil Y su plan activo
+    return response()->json($request->user()->load(['profile', 'activePlan']));
+}
+
+
     public function forgotPassword(Request $request)
     {
         $request->validate(['email' => 'required|email']);
