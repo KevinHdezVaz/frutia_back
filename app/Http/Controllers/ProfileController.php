@@ -42,7 +42,9 @@ class ProfileController extends Controller
             'things_to_avoid' => 'nullable|string',
             'plan_setup_complete' => 'nullable|boolean',
             'diet_difficulties' => 'nullable|array', // Nuevo campo
-            'diet_motivations' => 'nullable|array' // Nuevo campo
+            'diet_motivations' => 'nullable|array', // Nuevo campo
+            'pais' => 'nullable|string|max:255', // <--- ¡Añade esta línea!
+
         ]);
 
         // Guardar o actualizar el perfil

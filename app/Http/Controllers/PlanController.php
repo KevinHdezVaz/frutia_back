@@ -1,7 +1,5 @@
 <?php
-
 namespace App\Http\Controllers;
-
 use Illuminate\Http\Request;
 use App\Models\MealPlan;
 use Illuminate\Support\Facades\Http;
@@ -9,6 +7,55 @@ use Illuminate\Support\Facades\Log;
 
 class PlanController extends Controller
 {
+    public function getIngredientsList(Request $request)
+    {
+        $user = $request->user();
+        Log::debug('Intentando obtener lista de ingredientes para el usuario', ['user_id' => $user->id]);
+
+        $mealPlan = MealPlan::where('user_id', $user->id)
+            ->where('is_active', true)
+            ->latest('created_at')
+            ->first();
+
+        if (!$mealPlan) {
+            Log::info('No se encontró un plan activo para generar la lista de ingredientes', ['user_id' => $user->id]);
+            return response()->json(['message' => 'No se encontró un plan de alimentación activo para generar la lista de ingredientes.'], 404);
+        }
+
+        // Acceder a los datos del plan (que es un JSON)
+        $planData = $mealPlan->plan_data;
+        $allIngredients = [];
+
+        // Iterar sobre cada tipo de comida (desayuno, almuerzo, cena, snacks)
+        $mealTypes = ['desayuno', 'almuerzo', 'cena', 'snacks'];
+        foreach ($mealTypes as $type) {
+            if (isset($planData['meal_plan'][$type]) && is_array($planData['meal_plan'][$type])) {
+                foreach ($planData['meal_plan'][$type] as $mealOption) {
+                    if (isset($mealOption['details']['ingredients']) && is_array($mealOption['details']['ingredients'])) {
+                        // Añadir cada ingrediente con su cantidad a la lista consolidada
+                        foreach ($mealOption['details']['ingredients'] as $ingredient) {
+                            $allIngredients[] = trim($ingredient['item'] . ' (' . $ingredient['quantity'] . ')');
+                        }
+                    }
+                }
+            }
+        }
+
+        // Eliminar duplicados y ordenar alfabéticamente
+        $uniqueIngredients = array_values(array_unique($allIngredients));
+        sort($uniqueIngredients);
+
+        Log::info('Lista de ingredientes generada con éxito', [
+            'user_id' => $user->id,
+            'ingredient_count' => count($uniqueIngredients)
+        ]);
+
+        return response()->json([
+            'message' => 'Lista de ingredientes obtenida con éxito',
+            'data' => $uniqueIngredients
+        ], 200);
+    }
+
     public function generateAndStorePlan(Request $request)
     {
         $user = $request->user()->load('profile');
@@ -58,6 +105,25 @@ class PlanController extends Controller
         $dinnerTime = isset($profile->dinner_time) ? $profile->dinner_time : '20:00';
         $medicalCondition = isset($profile->medical_condition) ? $profile->medical_condition : 'Ninguna';
         $mealCount = isset($profile->meal_count) ? $profile->meal_count : '3 comidas principales';
+        $paisUsuario = isset($profile->pais) ? $profile->pais : 'Peru';
+
+        // Definir moneda según el país
+        $currency = match ($paisUsuario) {
+            'Peru' => 'PEN',
+            'Mexico' => 'MXN',
+            'Chile' => 'CLP',
+            'Argentina' => 'ARS',
+            default => 'USD' // Moneda por defecto si el país no está especificado
+        };
+
+        // Definir tiendas según el país
+        $stores = match ($paisUsuario) {
+            'Peru' => ['Plaza Vea', 'Tottus', 'Metro'],
+            'Mexico' => ['Walmart Mexico', 'Soriana', 'Chedraui'],
+            'Chile' => ['Jumbo', 'Lider', 'Santa Isabel'],
+            'Argentina' => ['Coto', 'Carrefour', 'Dia'],
+            default => ['Store 1', 'Store 2', 'Store 3'] // Tiendas genéricas por defecto
+        };
 
         // Construir el prompt
         $prompt = "Actúa como un nutricionista experto llamado Frutia. Crea un plan de comidas personalizado para el siguiente perfil:
@@ -81,6 +147,7 @@ class PlanController extends Controller
         - Estilo de comunicación preferido: {$communicationStyle}
         - Dificultades con la dieta: {$dietDifficulties}
         - Motivaciones para seguir la dieta: {$dietMotivations}
+        - País del usuario: {$paisUsuario}. **Considera los precios, moneda ({$currency}) y la disponibilidad general de ingredientes en este país** al sugerir recetas. **Consulta los precios de los ingredientes en las siguientes tiendas: " . implode(', ', $stores) . ".**
 
         Escribe un 'summary_title' corto y motivador usando el nombre preferido ({$preferredName}) con un tono acorde al estilo de comunicación ({$communicationStyle}).
 
@@ -95,115 +162,268 @@ class PlanController extends Controller
         - Descripción breve
         - Calorías aproximadas
         - Tiempo de preparación (en minutos)
-        - Lista de ingredientes (respetando {$profile->dietary_style}, {$profile->budget}, {$dislikedFoods}, {$allergies})
-        - Instrucciones paso a paso
+        - Lista de ingredientes con cantidades específicas (por ejemplo, '1 ajo', '500 g de pollo', '2 tazas de espinaca') respetando {$profile->dietary_style}, {$profile->budget}, {$dislikedFoods}, {$allergies}.
+        - Para cada ingrediente, incluye los precios en {$currency} de las tres tiendas principales del país ({$stores[0]}, {$stores[1]}, {$stores[2]}). Si no hay datos exactos, estima precios realistas basados en el mercado de {$paisUsuario}.
+        - Instrucciones paso a paso.
 
         Añade 5 recomendaciones específicas que aborden las dificultades ({$dietDifficulties}), las motivaciones ({$dietMotivations}), y la frecuencia de comer fuera ({$profile->eats_out}). Por ejemplo, sugiere opciones compatibles con {$profile->dietary_style} para comer fuera o estrategias para mantener la constancia.
 
         IMPORTANTE: Devuelve la respuesta únicamente en formato JSON válido, sin texto introductorio ni explicaciones adicionales, con esta estructura exacta:
         {
-          \"summary_title\": \"¡Hola {$preferredName}! Tu plan está listo para ayudarte a brillar.\",
-          \"summary_text_1\": \"Este plan está diseñado para tu objetivo de {$profile->goal}, adaptado a tu {$profile->activity_level} nivel de actividad y deportes ({$sport}). Las recetas te ayudarán a alcanzar tus metas con energía y consistencia.\",
-          \"summary_text_2\": \"Con {$profile->weight} kg, {$profile->height} cm, y {$profile->age} años, las recetas respetan tu {$profile->dietary_style}, presupuesto ({$profile->budget}), horarios ({$breakfastTime}, {$lunchTime}, {$dinnerTime}), {$dislikedFoods}, y {$allergies}. Todo está personalizado para ti.\",
-          \"summary_text_3\": \"Abordamos tus dificultades ({$dietDifficulties}) con estrategias prácticas y te mantenemos motivado con {$dietMotivations} para que sigas adelante.\",
-          \"summary_text_4\": \"Este plan mejorará tu energía, digestión y bienestar general. ¡Estás a un paso de sentirte increíble!\",
-          \"meal_plan\": {
-            \"desayuno\": [
-              {
-                \"opcion\": \"[Nombre de la receta]\",
-                \"details\": {
-                  \"description\": \"[Descripción breve de la receta]\",
-                  \"calories\": 0,
-                  \"prep_time_minutes\": 0,
-                  \"ingredients\": [\"[Ingrediente 1]\", \"[Ingrediente 2]\"],
-                  \"instructions\": [\"[Paso 1]\", \"[Paso 2]\"]
-                }
-              },
-              {
-                \"opcion\": \"[Nombre de la receta]\",
-                \"details\": {
-                  \"description\": \"[Descripción breve de la receta]\",
-                  \"calories\": 0,
-                  \"prep_time_minutes\": 0,
-                  \"ingredients\": [\"[Ingrediente 1]\", \"[Ingrediente 2]\"],
-                  \"instructions\": [\"[Paso 1]\", \"[Paso 2]\"]
-                }
-              }
-            ],
-            \"almuerzo\": [
-              {
-                \"opcion\": \"[Nombre de la receta]\",
-                \"details\": {
-                  \"description\": \"[Descripción breve de la receta]\",
-                  \"calories\": 0,
-                  \"prep_time_minutes\": 0,
-                  \"ingredients\": [\"[Ingrediente 1]\", \"[Ingrediente 2]\"],
-                  \"instructions\": [\"[Paso 1]\", \"[Paso 2]\"]
-                }
-              },
-              {
-                \"opcion\": \"[Nombre de la receta]\",
-                \"details\": {
-                  \"description\": \"[Descripción breve de la receta]\",
-                  \"calories\": 0,
-                  \"prep_time_minutes\": 0,
-                  \"ingredients\": [\"[Ingrediente 1]\", \"[Ingrediente 2]\"],
-                  \"instructions\": [\"[Paso 1]\", \"[Paso 2]\"]
-                }
-              }
-            ],
-            \"cena\": [
-              {
-                \"opcion\": \"[Nombre de la receta]\",
-                \"details\": {
-                  \"description\": \"[Descripción breve de la receta]\",
-                  \"calories\": 0,
-                  \"prep_time_minutes\": 0,
-                  \"ingredients\": [\"[Ingrediente 1]\", \"[Ingrediente 2]\"],
-                  \"instructions\": [\"[Paso 1]\", \"[Paso 2]\"]
-                }
-              },
-              {
-                \"opcion\": \"[Nombre de la receta]\",
-                \"details\": {
-                  \"description\": \"[Descripción breve de la receta]\",
-                  \"calories\": 0,
-                  \"prep_time_minutes\": 0,
-                  \"ingredients\": [\"[Ingrediente 1]\", \"[Ingrediente 2]\"],
-                  \"instructions\": [\"[Paso 1]\", \"[Paso 2]\"]
-                }
-              }
-            ],
-            \"snacks\": [
-              {
-                \"opcion\": \"[Nombre del snack]\",
-                \"details\": {
-                  \"description\": \"[Descripción breve del snack]\",
-                  \"calories\": 0,
-                  \"prep_time_minutes\": 0,
-                  \"ingredients\": [\"[Ingrediente 1]\", \"[Ingrediente 2]\"],
-                  \"instructions\": [\"[Paso 1]\", \"[Paso 2]\"]
-                }
-              },
-              {
-                \"opcion\": \"[Nombre del snack]\",
-                \"details\": {
-                  \"description\": \"[Descripción breve del snack]\",
-                  \"calories\": 0,
-                  \"prep_time_minutes\": 0,
-                  \"ingredients\": [\"[Ingrediente 1]\", \"[Ingrediente 2]\"],
-                  \"instructions\": [\"[Paso 1]\", \"[Paso 2]\"]
-                }
-              }
+            \"summary_title\": \"¡Hola {$preferredName}! Tu plan está listo para ayudarte a brillar.\",
+            \"summary_text_1\": \"Este plan está diseñado para tu objetivo de {$profile->goal}, adaptado a tu {$profile->activity_level} nivel de actividad y deportes ({$sport}). Las recetas te ayudarán a alcanzar tus metas con energía y consistencia.\",
+            \"summary_text_2\": \"Con {$profile->weight} kg, {$profile->height} cm, y {$profile->age} años, las recetas respetan tu {$profile->dietary_style}, presupuesto ({$profile->budget}), horarios ({$breakfastTime}, {$lunchTime}, {$dinnerTime}), {$dislikedFoods}, y {$allergies}. Todo está personalizado para ti.\",
+            \"summary_text_3\": \"Abordamos tus dificultades ({$dietDifficulties}) con estrategias prácticas y te mantenemos motivado con {$dietMotivations} para que sigas adelante.\",
+            \"summary_text_4\": \"Este plan mejorará tu energía, digestión y bienestar general. ¡Estás a un paso de sentirte increíble!\",
+            \"meal_plan\": {
+                \"desayuno\": [
+                    {
+                        \"opcion\": \"[Nombre de la receta]\",
+                        \"details\": {
+                            \"description\": \"[Descripción breve de la receta]\",
+                            \"calories\": 0,
+                            \"prep_time_minutes\": 0,
+                            \"ingredients\": [
+                                {
+                                    \"item\": \"[Ingrediente 1]\",
+                                    \"quantity\": \"[Cantidad, e.g., 1 unidad, 500 g]\",
+                                    \"prices\": [
+                                        {\"store\": \"{$stores[0]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[1]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[2]}\", \"price\": 0, \"currency\": \"{$currency}\"}
+                                    ]
+                                },
+                                {
+                                    \"item\": \"[Ingrediente 2]\",
+                                    \"quantity\": \"[Cantidad, e.g., 2 tazas]\",
+                                    \"prices\": [
+                                        {\"store\": \"{$stores[0]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[1]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[2]}\", \"price\": 0, \"currency\": \"{$currency}\"}
+                                    ]
+                                }
+                            ],
+                            \"instructions\": [\"[Paso 1]\", \"[Paso 2]\"]
+                        }
+                    },
+                    {
+                        \"opcion\": \"[Nombre de la receta]\",
+                        \"details\": {
+                            \"description\": \"[Descripción breve de la receta]\",
+                            \"calories\": 0,
+                            \"prep_time_minutes\": 0,
+                            \"ingredients\": [
+                                {
+                                    \"item\": \"[Ingrediente 1]\",
+                                    \"quantity\": \"[Cantidad, e.g., 1 unidad, 500 g]\",
+                                    \"prices\": [
+                                        {\"store\": \"{$stores[0]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[1]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[2]}\", \"price\": 0, \"currency\": \"{$currency}\"}
+                                    ]
+                                },
+                                {
+                                    \"item\": \"[Ingrediente 2]\",
+                                    \"quantity\": \"[Cantidad, e.g., 2 tazas]\",
+                                    \"prices\": [
+                                        {\"store\": \"{$stores[0]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[1]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[2]}\", \"price\": 0, \"currency\": \"{$currency}\"}
+                                    ]
+                                }
+                            ],
+                            \"instructions\": [\"[Paso 1]\", \"[Paso 2]\"]
+                        }
+                    }
+                ],
+                \"almuerzo\": [
+                    {
+                        \"opcion\": \"[Nombre de la receta]\",
+                        \"details\": {
+                            \"description\": \"[Descripción breve de la receta]\",
+                            \"calories\": 0,
+                            \"prep_time_minutes\": 0,
+                            \"ingredients\": [
+                                {
+                                    \"item\": \"[Ingrediente 1]\",
+                                    \"quantity\": \"[Cantidad, e.g., 1 unidad, 500 g]\",
+                                    \"prices\": [
+                                        {\"store\": \"{$stores[0]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[1]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[2]}\", \"price\": 0, \"currency\": \"{$currency}\"}
+                                    ]
+                                },
+                                {
+                                    \"item\": \"[Ingrediente 2]\",
+                                    \"quantity\": \"[Cantidad, e.g., 2 tazas]\",
+                                    \"prices\": [
+                                        {\"store\": \"{$stores[0]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[1]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[2]}\", \"price\": 0, \"currency\": \"{$currency}\"}
+                                    ]
+                                }
+                            ],
+                            \"instructions\": [\"[Paso 1]\", \"[Paso 2]\"]
+                        }
+                    },
+                    {
+                        \"opcion\": \"[Nombre de la receta]\",
+                        \"details\": {
+                            \"description\": \"[Descripción breve de la receta]\",
+                            \"calories\": 0,
+                            \"prep_time_minutes\": 0,
+                            \"ingredients\": [
+                                {
+                                    \"item\": \"[Ingrediente 1]\",
+                                    \"quantity\": \"[Cantidad, e.g., 1 unidad, 500 g]\",
+                                    \"prices\": [
+                                        {\"store\": \"{$stores[0]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[1]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[2]}\", \"price\": 0, \"currency\": \"{$currency}\"}
+                                    ]
+                                },
+                                {
+                                    \"item\": \"[Ingrediente 2]\",
+                                    \"quantity\": \"[Cantidad, e.g., 2 tazas]\",
+                                    \"prices\": [
+                                        {\"store\": \"{$stores[0]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[1]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[2]}\", \"price\": 0, \"currency\": \"{$currency}\"}
+                                    ]
+                                }
+                            ],
+                            \"instructions\": [\"[Paso 1]\", \"[Paso 2]\"]
+                        }
+                    }
+                ],
+                \"cena\": [
+                    {
+                        \"opcion\": \"[Nombre de la receta]\",
+                        \"details\": {
+                            \"description\": \"[Descripción breve de la receta]\",
+                            \"calories\": 0,
+                            \"prep_time_minutes\": 0,
+                            \"ingredients\": [
+                                {
+                                    \"item\": \"[Ingrediente 1]\",
+                                    \"quantity\": \"[Cantidad, e.g., 1 unidad, 500 g]\",
+                                    \"prices\": [
+                                        {\"store\": \"{$stores[0]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[1]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[2]}\", \"price\": 0, \"currency\": \"{$currency}\"}
+                                    ]
+                                },
+                                {
+                                    \"item\": \"[Ingrediente 2]\",
+                                    \"quantity\": \"[Cantidad, e.g., 2 tazas]\",
+                                    \"prices\": [
+                                        {\"store\": \"{$stores[0]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[1]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[2]}\", \"price\": 0, \"currency\": \"{$currency}\"}
+                                    ]
+                                }
+                            ],
+                            \"instructions\": [\"[Paso 1]\", \"[Paso 2]\"]
+                        }
+                    },
+                    {
+                        \"opcion\": \"[Nombre de la receta]\",
+                        \"details\": {
+                            \"description\": \"[Descripción breve de la receta]\",
+                            \"calories\": 0,
+                            \"prep_time_minutes\": 0,
+                            \"ingredients\": [
+                                {
+                                    \"item\": \"[Ingrediente 1]\",
+                                    \"quantity\": \"[Cantidad, e.g., 1 unidad, 500 g]\",
+                                    \"prices\": [
+                                        {\"store\": \"{$stores[0]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[1]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[2]}\", \"price\": 0, \"currency\": \"{$currency}\"}
+                                    ]
+                                },
+                                {
+                                    \"item\": \"[Ingrediente 2]\",
+                                    \"quantity\": \"[Cantidad, e.g., 2 tazas]\",
+                                    \"prices\": [
+                                        {\"store\": \"{$stores[0]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[1]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[2]}\", \"price\": 0, \"currency\": \"{$currency}\"}
+                                    ]
+                                }
+                            ],
+                            \"instructions\": [\"[Paso 1]\", \"[Paso 2]\"]
+                        }
+                    }
+                ],
+                \"snacks\": [
+                    {
+                        \"opcion\": \"[Nombre del snack]\",
+                        \"details\": {
+                            \"description\": \"[Descripción breve del snack]\",
+                            \"calories\": 0,
+                            \"prep_time_minutes\": 0,
+                            \"ingredients\": [
+                                {
+                                    \"item\": \"[Ingrediente 1]\",
+                                    \"quantity\": \"[Cantidad, e.g., 1 unidad, 500 g]\",
+                                    \"prices\": [
+                                        {\"store\": \"{$stores[0]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[1]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[2]}\", \"price\": 0, \"currency\": \"{$currency}\"}
+                                    ]
+                                },
+                                {
+                                    \"item\": \"[Ingrediente 2]\",
+                                    \"quantity\": \"[Cantidad, e.g., 2 tazas]\",
+                                    \"prices\": [
+                                        {\"store\": \"{$stores[0]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[1]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[2]}\", \"price\": 0, \"currency\": \"{$currency}\"}
+                                    ]
+                                }
+                            ],
+                            \"instructions\": [\"[Paso 1]\", \"[Paso 2]\"]
+                        }
+                    },
+                    {
+                        \"opcion\": \"[Nombre del snack]\",
+                        \"details\": {
+                            \"description\": \"[Descripción breve del snack]\",
+                            \"calories\": 0,
+                            \"prep_time_minutes\": 0,
+                            \"ingredients\": [
+                                {
+                                    \"item\": \"[Ingrediente 1]\",
+                                    \"quantity\": \"[Cantidad, e.g., 1 unidad, 500 g]\",
+                                    \"prices\": [
+                                        {\"store\": \"{$stores[0]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[1]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[2]}\", \"price\": 0, \"currency\": \"{$currency}\"}
+                                    ]
+                                },
+                                {
+                                    \"item\": \"[Ingrediente 2]\",
+                                    \"quantity\": \"[Cantidad, e.g., 2 tazas]\",
+                                    \"prices\": [
+                                        {\"store\": \"{$stores[0]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[1]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[2]}\", \"price\": 0, \"currency\": \"{$currency}\"}
+                                    ]
+                                }
+                            ],
+                            \"instructions\": [\"[Paso 1]\", \"[Paso 2]\"]
+                        }
+                    }
+                ]
+            },
+            \"recomendaciones\": [
+                \"[Recomendación 1 personalizada]\",
+                \"[Recomendación 2 personalizada]\",
+                \"[Recomendación 3 personalizada]\",
+                \"[Recomendación 4 personalizada]\",
+                \"[Recomendación 5 personalizada]\"
             ]
-          },
-          \"recomendaciones\": [
-            \"[Recomendación 1 personalizada]\",
-            \"[Recomendación 2 personalizada]\",
-            \"[Recomendación 3 personalizada]\",
-            \"[Recomendación 4 personalizada]\",
-            \"[Recomendación 5 personalizada]\"
-          ]
         }";
 
         // Debug: Registrar el prompt enviado a OpenAI
@@ -318,7 +538,7 @@ class PlanController extends Controller
 
         $mealPlan = MealPlan::where('user_id', $user->id)
             ->where('is_active', true)
-            ->latest('created_at') // Cambiado de 'generated_at' a 'created_at'
+            ->latest('created_at')
             ->first();
 
         if (!$mealPlan) {
@@ -326,14 +546,56 @@ class PlanController extends Controller
             return response()->json(['message' => 'No se encontró un plan de alimentación activo para este usuario.'], 404);
         }
 
-        Log::info('Plan activo encontrado para el usuario', [
+        // Acceder a los datos del plan (que es un JSON)
+        // Decodificar a un array asociativo para poder manipularlo
+        $planData = $mealPlan->plan_data;
+
+        // *** Lógica de Normalización de Ingredientes en el Backend ***
+        $mealTypes = ['desayuno', 'almuerzo', 'cena', 'snacks'];
+        foreach ($mealTypes as $type) {
+            // Asegurarse de que el tipo de comida existe y es un array
+            if (isset($planData['meal_plan'][$type]) && is_array($planData['meal_plan'][$type])) {
+                foreach ($planData['meal_plan'][$type] as &$mealOption) { // Usar '&' para pasar por referencia
+                    // Asegurarse de que 'details' y 'ingredients' existen y 'ingredients' es un array
+                    if (isset($mealOption['details']['ingredients']) && is_array($mealOption['details']['ingredients'])) {
+                        $normalizedIngredients = [];
+                        foreach ($mealOption['details']['ingredients'] as $ingredient) {
+                            // Si el ingrediente es una cadena (formato antiguo)
+                            if (is_string($ingredient)) {
+                                $normalizedIngredients[] = [
+                                    'item' => trim($ingredient), // El nombre del ingrediente
+                                    'quantity' => '',            // Cantidad vacía
+                                    'prices' => []               // Lista de precios vacía
+                                ];
+                            } 
+                            // Si el ingrediente ya es un array/objeto (formato nuevo)
+                            elseif (is_array($ingredient) && isset($ingredient['item'])) {
+                                $normalizedIngredients[] = $ingredient;
+                            } else {
+                                // En caso de algún formato inesperado, añadir un placeholder para evitar fallos
+                                $normalizedIngredients[] = [
+                                    'item' => 'Ingrediente desconocido',
+                                    'quantity' => '',
+                                    'prices' => []
+                                ];
+                            }
+                        }
+                        // Reemplazar la lista de ingredientes original con la lista normalizada
+                        $mealOption['details']['ingredients'] = $normalizedIngredients;
+                    }
+                }
+            }
+        }
+        // *** Fin de la Lógica de Normalización ***
+
+        Log::info('Plan activo encontrado y normalizado para el usuario', [
             'user_id' => $user->id,
             'meal_plan_id' => $mealPlan->id
         ]);
 
         return response()->json([
             'message' => 'Plan alimenticio obtenido con éxito',
-            'data' => $mealPlan->plan_data // Devolvemos el JSON almacenado en plan_data
+            'data' => $planData // Devolver los datos del plan ya normalizados
         ], 200);
     }
 }

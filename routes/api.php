@@ -37,6 +37,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/recipes/{recipe}', [RecipeController::class, 'show']);
     Route::post('/recipes/generate-image', [RecipeImageController::class, 'generateImageForOption']);
 
+    Route::get('/plan/ingredients', [PlanController::class, 'getIngredientsList']);
 
   
 
