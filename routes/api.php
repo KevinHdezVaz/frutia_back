@@ -6,6 +6,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\PlanController;
 use App\Http\Controllers\RecipeController;
+use App\Http\Controllers\StreakController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RecipeImageController;
 
@@ -40,6 +41,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/plan/ingredients', [PlanController::class, 'getIngredientsList']);
 
   
+    Route::post('/streak/complete-day', [StreakController::class, 'marcarDiaCompleto']);
 
     Route::post('/summarize', [ChatController::class, 'summarizeConversation']);
 

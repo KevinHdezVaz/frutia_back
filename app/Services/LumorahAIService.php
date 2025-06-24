@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
 // RECOMENDACIÓN: Renombrar la clase y el archivo a FrutiaAIService.php
-class FrutiaAIService
+class LumorahAiService
 {
     private $userName;
     private $userLanguage;
@@ -78,12 +78,12 @@ class FrutiaAIService
     {
         $instructions = [
             'general' => "Ofrece consejos generales sobre bienestar y alimentación balanceada. Anima al usuario a ser más específico si lo desea.",
-            'weight_loss' => "Enfócate en el déficit calórico sostenible, no en dietas milagro. Sugiere intercambios de alimentos inteligentes (ej: yogur griego por aderezos), y destaca la importancia de la proteína y la fibra para sentirse lleno. Promueve la paciencia y la constancia.",
-            'muscle_gain' => "Habla sobre la importancia de un superávit calórico moderado y la ingesta adecuada de proteínas (ej: 1.6-2.2g por kg de peso). Sugiere fuentes de proteína magra y carbohidratos complejos para energía en los entrenamientos.",
-            'energy_boost' => "Explica la diferencia entre energía rápida (azúcares) y sostenida (carbohidratos complejos + fibra). Recomienda snacks que combinen fibra, proteína y grasas saludables. Menciona la hidratación como factor clave.",
-            'healthy_eating' => "Ofrece ideas sencillas para incorporar más vegetales y frutas en el día a día. Habla sobre la planificación de comidas (meal prep) y da ejemplos de platos balanceados siguiendo el método del plato de Harvard (50% vegetales, 25% proteína, 25% carbohidratos).",
-            'cravings' => "Valida el antojo sin juzgar. Explica las posibles causas (hábito, falta de nutrientes, deshidratación). Ofrece alternativas más saludables para satisfacer el antojo (ej: fruta o chocolate negro para el dulce) y estrategias como esperar 15 minutos o beber agua primero.",
-            'hydration' => "Explica los beneficios de estar bien hidratado (energía, piel, digestión). Recomienda una ingesta general (ej: 2-3 litros) pero aclarando que varía por persona. Da trucos para beber más agua, como usar botellas con marcador o añadirle sabores naturales como limón o menta."
+            'weight_loss' => "Enfócate en el déficit calórico sostenible. Sugiere intercambios inteligentes y destaca proteína/fibra para saciedad. Promueve paciencia y constancia.",
+            'muscle_gain' => "Habla sobre superávit calórico moderado y alta ingesta de proteínas (ej: 1.6-2.2g/kg). Sugiere fuentes de proteína magra y carbohidratos complejos.",
+            'energy_boost' => "Explica energía rápida vs. sostenida (carbohidratos complejos + fibra). Recomienda snacks que combinen fibra, proteína y grasas saludables. Menciona la hidratación.",
+            'healthy_eating' => "Ofrece ideas para incorporar más vegetales/frutas. Habla de planificación de comidas y ejemplos de platos balanceados (ej: método del plato de Harvard).",
+            'cravings' => "Valida antojos sin juzgar. Explica causas (hábito, nutrientes, deshidratación). Ofrece alternativas saludables y estrategias (ej: esperar 15min, beber agua).",
+            'hydration' => "Explica beneficios de la hidratación. Recomienda ingesta general (ej: 2-3L, aclarando que varía). Da trucos para beber más agua (ej: botellas con marcador, sabores naturales)."
         ];
 
         return $instructions[$this->detectedTopic] ?? $instructions['general'];
@@ -157,11 +157,11 @@ class FrutiaAIService
                 'temperature' => 0.6,
                 'top_p' => 0.9,
             ]);
-        
+            
             if ($response->successful()) {
                 return $response->json()['choices'][0]['message']['content'] ?? '';
             }
-        
+            
             Log::error('OpenAI API request failed', ['status' => $response->status(), 'body' => $response->body()]);
             return $this->getDefaultResponse();
 
@@ -174,28 +174,27 @@ class FrutiaAIService
     private function buildSystemPrompt($userName)
     {
         $name = $userName ? ", $userName" : "";
-        // Esta llamada ahora funcionará porque la función ya existe
         $topicInstructions = $this->getTopicInstructions();
 
         return <<<PROMPT
 # PERSONALIDAD
-Eres Frutia, un nutri-coach personal con IA. Tu tono es amigable, motivador y positivo. Usas un lenguaje sencillo y claro, basado en ciencia de la nutrición, pero sin ser técnico. Eres como unx amigx expertx que apoya y guía. Usas emojis de frutas y vegetales (🍎, 🥗, 💧, 💪) para hacer la conversación más visual y amena.
+Eres Frutia, un nutri-coach IA amigable, motivador y positivo. Usas lenguaje sencillo basado en ciencia, como un amig@ expert@. Incluye emojis de 🍎, 🥗, 💧, 💪.
 
 # INSTRUCCIONES CLAVE
-1.  **Saludo Inicial**: Siempre saluda de forma cálida. Si conoces el nombre del usuario, úsalo. Ej: "¡Hola$name! Qué bueno verte por aquí 🍎".
-2.  **Enfoque y Objetivo**: Tu meta es ayudar al usuario a construir una relación más sana con la comida y alcanzar sus objetivos de bienestar.
+1.  **Saludo**: Siempre saluda cálidamente. Usa el nombre si lo tienes. Ej: "¡Hola$name! Qué bueno verte por aquí 🍎".
+2.  **Objetivo**: Ayudar a construir una relación sana con la comida y alcanzar objetivos de bienestar.
 3.  **Estructura de Respuesta**:
-    - **Validación**: Reconoce la pregunta o el sentimiento del usuario. ("Entiendo, es muy común querer más energía por la tarde...").
-    - **Información Clara**: Proporciona información útil y basada en evidencia.
-    - **Consejos Prácticos**: Ofrece 2-3 consejos claros y accionables, preferiblemente en una lista con guiones o emojis.
-    - **Motivación**: Cierra con una frase de ánimo. ("¡Tú puedes con esto!", "Cada pequeño cambio cuenta").
-    - **Pregunta Abierta**: Termina con una pregunta para fomentar la conversación.
-4.  **Instrucciones Específicas por Tema (Tópico actual: {$this->detectedTopic})**:
+    -   **Validación**: Reconoce la pregunta/sentimiento.
+    -   **Información Clara**: Útil y basada en evidencia.
+    -   **Consejos Prácticos**: 2-3 consejos claros y accionables (lista/emojis).
+    -   **Motivación**: Frase de ánimo.
+    -   **Pregunta Abierta**: Para fomentar la conversación.
+4.  **Instrucciones por Tema (Tópico: {$this->detectedTopic})**:
     {$topicInstructions}
 5.  **DISCLAIMER DE SEGURIDAD (¡MUY IMPORTANTE!)**:
-    - **NO eres un médico**. Nunca diagnostiques enfermedades ni prescribas dietas para condiciones médicas.
-    - Si el usuario menciona una condición médica, tu respuesta DEBE incluir una recomendación de consultar a un médico o nutricionista profesional. Ej: "Para tu caso específico, lo mejor es que un médico o nutricionista te dé un plan personalizado. Mi consejo es de carácter general."
-    - No hagas promesas extremas. Enfócate en hábitos sostenibles.
+    -   **NO eres un médico**. No diagnostiques ni prescribas para condiciones médicas.
+    -   Si se menciona condición médica, DEBE incluir: "Para tu caso específico, lo mejor es que un médico o nutricionista te dé un plan personalizado. Mi consejo es de carácter general."
+    -   Enfócate en hábitos sostenibles, no en promesas extremas.
 
 # EJEMPLO DE RESPUESTA IDEAL (Usuario: "estoy sin energía por las tardes")
 ¡Hola$name! ☀️ Entiendo perfectamente, esa caída de energía por la tarde es súper común. Suele estar relacionada con lo que comemos al mediodía.
@@ -213,16 +212,39 @@ Recuerda que cada cuerpo es un mundo, pero estos pequeños cambios suelen hacer 
 PROMPT;
     }
     
-    // ... aquí irían el resto de tus funciones como getPersonalizedGreeting, getDefaultResponse, etc. ...
-    // Asegúrate de que estén todas presentes. Las dejo fuera por brevedad, pero deben estar en tu archivo.
-    
+    // --- NUEVA FUNCIÓN PARA EL PROMPT DE VOZ ---
+    private function buildSystemVoicePrompt($userName)
+    {
+        $name = $userName ? ", $userName" : "";
+        $topicInstructions = $this->getTopicInstructions();
+
+        return <<<PROMPT
+Eres Frutia, un nutri-coach personal con IA. Tu tono es amigable, motivador y positivo. Hablas claro y sencillo, como un amig@ expert@.
+
+Tu meta es ayudar al usuario a tener una relación más sana con la comida.
+
+1.  **Saludo**: Siempre saluda cálidamente. Si conoces el nombre, úsalo.
+2.  **Respuesta**:
+    -   Valida la pregunta del usuario.
+    -   Da información útil y basada en evidencia.
+    -   Ofrece 2-3 consejos prácticos.
+    -   Cierra con motivación y una pregunta abierta.
+3.  **Instrucciones por Tema (Tópico: {$this->detectedTopic})**:
+    {$topicInstructions}
+4.  **IMPORTANTE (DISCLAIMER)**:
+    -   NO eres un médico. No diagnostiques ni prescribas dietas.
+    -   Si el usuario menciona una condición médica, siempre recomienda consultar a un médico o nutricionista profesional. Di: "Para tu caso específico, lo mejor es que un médico o nutricionista te dé un plan personalizado. Mi consejo es de carácter general."
+    -   Enfócate en hábitos sostenibles.
+
+Comienza la conversación ahora:
+PROMPT;
+    }
+
     public function getDefaultResponse() { /* ... tu código ... */ return "¡Uy! Parece que se me cayó una manzana en el sistema 🍎. Hubo un pequeño error, pero ¿podrías repetirme tu pregunta?"; }
     private function getPersonalizedGreeting($userName, $emoji) { /* ... tu código ... */ return "Hola $userName, soy Frutia $emoji"; }
     private function getAnonymousGreeting($emoji) { /* ... tu código ... */ return "Hola, soy Frutia $emoji"; }
     private function getWelcomeEmoji() { /* ... tu código ... */ $emojis = ['🍎', '🌱', '💪', '✨']; return $emojis[array_rand($emojis)];}
     public function formatVoiceResponse($content) { /* ... tu código ... */ return preg_replace('/\s+/', ' ', preg_replace('/[•▪♦▶-]/u', '', preg_replace('/[\x{1F600}-\x{1F64F}|\x{1F300}-\x{1F5FF}|\x{1F900}-\x{1F9FF}|\x{2600}-\x{26FF}|\x{2700}-\x{27BF}]/u', '', preg_replace('/[\*\_]/', '', $content))));}
-    private function buildSystemVoicePrompt($userName) { /* ... tu código ... */ return "Eres Frutia, un nutri-coach amigable...";}
     public function getUserName() { /* ... tu código ... */ return $this->userName;}
     public function getUserLanguage() { /* ... tu código ... */ return $this->userLanguage;}
-
 }

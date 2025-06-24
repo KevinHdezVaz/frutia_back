@@ -22,8 +22,7 @@ class Kernel extends ConsoleKernel
     {   
         // $schedule->command('inspire')->hourly();
         $schedule->command('notifications:process')->everyMinute();
-        $schedule->command('matches:cancel-incomplete')->everyFiveMinutes();
-        $schedule->command('mvp:reset-counters')->monthlyOn(1, '00:00');
+        $schedule->command('queue:work --stop-when-empty')->everyMinute();
 
     }
 
