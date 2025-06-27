@@ -17,5 +17,6 @@ class Ingredient extends Model
     protected $fillable = [
         'name',
         'image_url',
+        'local_image_path', // <-- AÑADE ESTA LÍNEA
     ];
 }

@@ -6,7 +6,6 @@ use App\Models\MealPlan;
 use App\Models\Ingredient;
 use Illuminate\Support\Str;
 use Illuminate\Http\Request;
-use App\Jobs\GenerateMealImages;
 use App\Jobs\GenerateRecipeImage;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
@@ -92,7 +91,8 @@ class PlanController extends Controller
         - summary_text_3: Detalla cómo el plan aborda las dificultades ({$dietDifficulties}) y se alinea con las motivaciones ({$dietMotivations}).
         - summary_text_4 (opcional): Resalta beneficios adicionales (energía, digestión, bienestar) y un mensaje motivador para cerrar.
 
-        Asegura un plan de comidas para {$mealCount}. Para cada comida (desayuno, almuerzo, cena, y snacks si {$mealCount} incluye snacks), genera 2 opciones variadas. Para cada opción, incluye:
+        Asegura un plan de comidas para {$mealCount}. 
+        Para cada comida (desayuno, almuerzo, cena, y snacks si {$mealCount} incluye snacks), genera 2 opciones variadas. IMPORTANTE SERAN 2 OPCIONES. Para cada opción, incluye:
         - Descripción breve
         - Calorías aproximadas
         - Tiempo de preparación (en minutos)
@@ -100,9 +100,11 @@ class PlanController extends Controller
         - Para cada ingrediente, incluye los precios en {$currency} de las tres tiendas principales del país ({$stores[0]}, {$stores[1]}, {$stores[2]}). Si no hay datos exactos, estima precios realistas basados en el mercado de {$paisUsuario}.
         - Instrucciones paso a paso.
 
+        Para cada comida (desayuno, almuerzo, cena, y snacks si aplica), incluye una opción alternativa en la sección 'alternatives', con la misma estructura que las opciones principales (opción, descripción, calorías, tiempo de preparación, ingredientes con precios, instrucciones, e image_prompt).
+
         Añade 5 recomendaciones específicas que aborden las dificultades ({$dietDifficulties}), las motivaciones ({$dietMotivations}), y la frecuencia de comer fuera ({$profile->eats_out}). Por ejemplo, sugiere opciones compatibles con {$profile->dietary_style} para comer fuera o estrategias para mantener la constancia.
 
-        y finalmente agrega imágenes de cada receta en image_prompt, con una descripción simple solo el Nombre de la receta.
+        Y finalmente agrega imágenes de cada receta en image_prompt, con una descripción simple solo el Nombre de la receta.
 
         IMPORTANTE: Devuelve la respuesta únicamente en formato JSON válido, sin texto introductorio ni explicaciones adicionales, con esta estructura exacta:
         {
@@ -203,7 +205,93 @@ class PlanController extends Controller
                             \"instructions\": [\"[Paso 1]\", \"[Paso 2]\"]
                         }
                     }
-                ]
+                ],
+                \"alternatives\": {
+                    \"desayuno\": {
+                        \"opcion\": \"[Nombre de la receta alternativa]\",
+                        \"details\": {
+                            \"description\": \"[Descripción breve de la receta]\",
+                            \"image_prompt\": \"[Descripción simple para el generador de imágenes]\",
+                            \"calories\": 0,
+                            \"prep_time_minutes\": 0,
+                            \"ingredients\": [
+                                {
+                                    \"item\": \"[Ingrediente 1]\",
+                                    \"quantity\": \"[Cantidad, e.g., 1 unidad, 500 g]\",
+                                    \"prices\": [
+                                        {\"store\": \"{$stores[0]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[1]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[2]}\", \"price\": 0, \"currency\": \"{$currency}\"}
+                                    ]
+                                }
+                            ],
+                            \"instructions\": [\"[Paso 1]\", \"[Paso 2]\"]
+                        }
+                    },
+                    \"almuerzo\": {
+                        \"opcion\": \"[Nombre de la receta alternativa]\",
+                        \"details\": {
+                            \"description\": \"[Descripción breve de la receta]\",
+                            \"image_prompt\": \"[Descripción simple para el generador de imágenes]\",
+                            \"calories\": 0,
+                            \"prep_time_minutes\": 0,
+                            \"ingredients\": [
+                                {
+                                    \"item\": \"[Ingrediente 1]\",
+                                    \"quantity\": \"[Cantidad, e.g., 1 unidad, 500 g]\",
+                                    \"prices\": [
+                                        {\"store\": \"{$stores[0]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[1]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[2]}\", \"price\": 0, \"currency\": \"{$currency}\"}
+                                    ]
+                                }
+                            ],
+                            \"instructions\": [\"[Paso 1]\", \"[Paso 2]\"]
+                        }
+                    },
+                    \"cena\": {
+                        \"opcion\": \"[Nombre de la receta alternativa]\",
+                        \"details\": {
+                            \"description\": \"[Descripción breve de la receta]\",
+                            \"image_prompt\": \"[Descripción simple para el generador de imágenes]\",
+                            \"calories\": 0,
+                            \"prep_time_minutes\": 0,
+                            \"ingredients\": [
+                                {
+                                    \"item\": \"[Ingrediente 1]\",
+                                    \"quantity\": \"[Cantidad, e.g., 1 unidad, 500 g]\",
+                                    \"prices\": [
+                                        {\"store\": \"{$stores[0]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[1]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[2]}\", \"price\": 0, \"currency\": \"{$currency}\"}
+                                    ]
+                                }
+                            ],
+                            \"instructions\": [\"[Paso 1]\", \"[Paso 2]\"]
+                        }
+                    },
+                    \"snacks\": {
+                        \"opcion\": \"[Nombre del snack alternativo]\",
+                        \"details\": {
+                            \"description\": \"[Descripción breve del snack]\",
+                            \"image_prompt\": \"[Descripción simple para el generador de imágenes]\",
+                            \"calories\": 0,
+                            \"prep_time_minutes\": 0,
+                            \"ingredients\": [
+                                {
+                                    \"item\": \"[Ingrediente 1]\",
+                                    \"quantity\": \"[Cantidad, e.g., 1 unidad, 500 g]\",
+                                    \"prices\": [
+                                        {\"store\": \"{$stores[0]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[1]}\", \"price\": 0, \"currency\": \"{$currency}\"},
+                                        {\"store\": \"{$stores[2]}\", \"price\": 0, \"currency\": \"{$currency}\"}
+                                    ]
+                                }
+                            ],
+                            \"instructions\": [\"[Paso 1]\", \"[Paso 2]\"]
+                        }
+                    }
+                }
             },
             \"recomendaciones\": [
                 \"[Recomendación 1 personalizada]\",
@@ -236,6 +324,12 @@ class PlanController extends Controller
             $planContent = $response->json('choices.0.message.content');
             $planData = json_decode($planContent, true);
 
+            Log::info('[PlanController] Estructura de planData: ', [
+                'meal_plan_keys' => array_keys($planData['meal_plan'] ?? []),
+                'has_alternatives' => isset($planData['meal_plan']['alternatives']) ? 'Sí' : 'No',
+                'alternatives_keys' => isset($planData['meal_plan']['alternatives']) ? array_keys($planData['meal_plan']['alternatives']) : []
+            ]);
+
             if (json_last_error() !== JSON_ERROR_NONE || !isset($planData['meal_plan'])) {
                 Log::error('El JSON de OpenAI no es válido o no tiene la estructura esperada', [
                     'user_id' => $user->id,
@@ -260,19 +354,33 @@ class PlanController extends Controller
                 'meal_plan_id' => $mealPlan->id
             ]);
 
-            
-            $mealTypes = ['desayuno', 'almuerzo', 'cena', 'snacks'];
+            $mealTypes = ['desayuno', 'almuerzo', 'cena', 'snacks', 'alternatives'];
             foreach ($mealTypes as $type) {
-                if (!empty($planData['meal_plan'][$type]) && is_array($planData['meal_plan'][$type])) {
-                    foreach ($planData['meal_plan'][$type] as $index => $mealOption) {
-                        // Despachamos un job para CADA receta, pasándole el ID del plan,
-                        // el tipo de comida y su índice en el array.
-                        GenerateRecipeImage::dispatch($mealPlan->id, $type, $index);
+              
+                if ($type === 'alternatives') {
+                    Log::info("[PlanController] Verificando alternatives en meal_plan", [
+                        'alternatives_exists' => isset($planData['meal_plan']['alternatives']),
+                        'is_array' => is_array($planData['meal_plan']['alternatives'] ?? []),
+                        'alternatives_content' => $planData['meal_plan']['alternatives'] ?? 'No disponible'
+                    ]);
+                    if (isset($planData['meal_plan']['alternatives']) && is_array($planData['meal_plan']['alternatives']) && !empty($planData['meal_plan']['alternatives'])) {
+                        foreach ($planData['meal_plan']['alternatives'] as $altType => $altMeal) {
+                            if (isset($altMeal['opcion']) && isset($altMeal['details']['image_prompt'])) {
+                                Log::info("[PlanController] Despachando GenerateRecipeImage para alternativa: {$altType}, opcion: " . ($altMeal['opcion'] ?? 'Sin opción'));
+                                GenerateRecipeImage::dispatch($mealPlan->id, $altType, 0);
+                            } else {
+                                Log::warning("[PlanController] Alternativa inválida para {$altType}", [
+                                    'altMeal' => $altMeal
+                                ]);
+                            }
+                        }
+                    } else {
+                        Log::warning("[PlanController] No se encontró 'alternatives' en meal_plan, no es un array o está vacío");
                     }
                 }
             }
-             // La respuesta al usuario no cambia
-             return response()->json([
+
+            return response()->json([
                 'message' => 'Plan alimenticio generado con éxito. Las imágenes se están preparando.',
                 'data' => $mealPlan
             ], 201);
@@ -300,14 +408,12 @@ class PlanController extends Controller
             return response()->json(['message' => 'No se encontró un plan de alimentación activo.'], 404);
         }
 
-        $enrichedPlanData = $this->enrichPlanWithImages($mealPlan->plan_data);
-
         return response()->json([
             'message' => 'Plan alimenticio obtenido con éxito',
-            'data' => $enrichedPlanData
+            'data' => $mealPlan->plan_data
         ], 200);
     }
-
+   
     public function getIngredientsList(Request $request)
     {
         $user = $request->user();
@@ -324,9 +430,19 @@ class PlanController extends Controller
         $planData = $mealPlan->plan_data;
         $allIngredients = [];
 
-        $mealTypes = ['desayuno', 'almuerzo', 'cena', 'snacks'];
+        $mealTypes = ['desayuno', 'almuerzo', 'cena', 'snacks', 'alternatives'];
         foreach ($mealTypes as $type) {
-            if (isset($planData['meal_plan'][$type]) && is_array($planData['meal_plan'][$type])) {
+            if ($type === 'alternatives' && isset($planData['meal_plan']['alternatives'])) {
+                foreach ($planData['meal_plan']['alternatives'] as $altMeal) {
+                    if (isset($altMeal['details']['ingredients']) && is_array($altMeal['details']['ingredients'])) {
+                        foreach ($altMeal['details']['ingredients'] as $ingredient) {
+                            if (isset($ingredient['item']) && isset($ingredient['quantity'])) {
+                                $allIngredients[] = trim($ingredient['item'] . ' (' . $ingredient['quantity'] . ')');
+                            }
+                        }
+                    }
+                }
+            } elseif (isset($planData['meal_plan'][$type]) && is_array($planData['meal_plan'][$type])) {
                 foreach ($planData['meal_plan'][$type] as $mealOption) {
                     if (isset($mealOption['details']['ingredients']) && is_array($mealOption['details']['ingredients'])) {
                         foreach ($mealOption['details']['ingredients'] as $ingredient) {
@@ -347,63 +463,83 @@ class PlanController extends Controller
             'data' => $uniqueIngredients
         ], 200);
     }
+    
+    private function enrichPlanWithImages(array $planData): array
+    {
+        if (!isset($planData['meal_plan'])) {
+            return $planData;
+        }
 
-   // En PlanController.php
+        foreach ($planData['meal_plan'] as $type => &$meals) {
+            if ($type === 'alternatives') {
+                foreach ($meals as &$altMeal) {
+                    if (isset($altMeal['details']['ingredients']) && is_array($altMeal['details']['ingredients'])) {
+                        foreach ($altMeal['details']['ingredients'] as &$ingredientData) {
+                            if (isset($ingredientData['item'])) {
+                                $itemName = trim($ingredientData['item']);
+                                $imageUrl = null;
 
-private function enrichPlanWithImages(array $planData): array
-{
-    if (!isset($planData['meal_plan'])) {
-        return $planData;
-    }
+                                $dbIngredient = Ingredient::where('name', $itemName)->first();
 
-    foreach ($planData['meal_plan'] as &$meals) {
-        if (is_array($meals)) {
-            foreach ($meals as &$mealOption) {
-                if (isset($mealOption['details']['ingredients']) && is_array($mealOption['details']['ingredients'])) {
-                    foreach ($mealOption['details']['ingredients'] as &$ingredientData) {
-                        if (isset($ingredientData['item'])) {
-                            $itemName = trim($ingredientData['item']);
-                            $imageUrl = null; // Inicializamos como null
+                                if ($dbIngredient && !empty($dbIngredient->image_url)) {
+                                    Log::info("Usando URL de ingrediente cacheada para: " . $itemName);
+                                    $imageUrl = $dbIngredient->image_url;
+                                } else {
+                                    Log::info("No hay URL cacheada para: " . $itemName . ". Buscando en Unsplash.");
+                                    $imageUrl = $this->fetchImageFromUnsplash($itemName);
 
-                            // 1. Buscamos primero en nuestra base de datos
-                            $dbIngredient = Ingredient::where('name', $itemName)->first();
-
-                            // 2. Verificamos si encontramos un ingrediente Y si tiene una URL válida
-                            if ($dbIngredient && !empty($dbIngredient->image_url)) {
-                                // ¡ÉXITO! Usamos la URL cacheada de nuestra base de datos
-                                Log::info("Usando URL de ingrediente cacheada para: " . $itemName);
-                                $imageUrl = $dbIngredient->image_url;
-                            } else {
-                                // SI NO: No encontramos el ingrediente o no tiene URL, así que llamamos a la API
-                                Log::info("No hay URL cacheada para: " . $itemName . ". Buscando en Unsplash.");
-                                $imageUrl = $this->fetchImageFromUnsplash($itemName);
-
-                                if ($imageUrl) {
-                                    // Si Unsplash nos dio una URL, la guardamos en nuestra BD para la próxima vez.
-                                    // updateOrCreate es perfecto: crea el ingrediente si no existe, o solo actualiza la URL si ya existía.
-                                    Ingredient::updateOrCreate(
-                                        ['name' => $itemName],
-                                        ['image_url' => $imageUrl]
-                                    );
+                                    if ($imageUrl) {
+                                        Ingredient::updateOrCreate(
+                                            ['name' => $itemName],
+                                            ['image_url' => $imageUrl]
+                                        );
+                                    }
                                 }
+                                
+                                $ingredientData['image_url'] = $imageUrl;
                             }
-                            
-                            // 3. Añadimos la URL (de la BD o de Unsplash) al JSON que se enviará a la app
-                            $ingredientData['image_url'] = $imageUrl;
+                        }
+                    }
+                }
+            } elseif (is_array($meals)) {
+                foreach ($meals as &$mealOption) {
+                    if (isset($mealOption['details']['ingredients']) && is_array($mealOption['details']['ingredients'])) {
+                        foreach ($mealOption['details']['ingredients'] as &$ingredientData) {
+                            if (isset($ingredientData['item'])) {
+                                $itemName = trim($ingredientData['item']);
+                                $imageUrl = null;
+
+                                $dbIngredient = Ingredient::where('name', $itemName)->first();
+
+                                if ($dbIngredient && !empty($dbIngredient->image_url)) {
+                                    Log::info("Usando URL de ingrediente cacheada para: " . $itemName);
+                                    $imageUrl = $dbIngredient->image_url;
+                                } else {
+                                    Log::info("No hay URL cacheada para: " . $itemName . ". Buscando en Unsplash.");
+                                    $imageUrl = $this->fetchImageFromUnsplash($itemName);
+
+                                    if ($imageUrl) {
+                                        Ingredient::updateOrCreate(
+                                            ['name' => $itemName],
+                                            ['image_url' => $imageUrl]
+                                        );
+                                    }
+                                }
+                                
+                                $ingredientData['image_url'] = $imageUrl;
+                            }
                         }
                     }
                 }
             }
         }
-    }
 
-    return $planData;
-}
+        return $planData;
+    }
 
     private function fetchImageFromUnsplash(string $keyword): ?string
     {
- 
-         $accessKey = 'qytRuzMnw8P3BSPJinKJ6QdkCVaL8bFFnMJKh4Qz7-w';
+        $accessKey = 'qytRuzMnw8P3BSPJinKJ6QdkCVaL8bFFnMJKh4Qz7-w';
 
         if (!$accessKey) {
             return null;

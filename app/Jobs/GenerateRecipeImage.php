@@ -31,49 +31,73 @@ class GenerateRecipeImage implements ShouldQueue
     }
 
     public function handle(): void
-    {
-        $mealPlan = MealPlan::find($this->mealPlanId);
-        if (!$mealPlan) {
-            Log::warning("[JOB_SINGLE] No se encontró MealPlan con ID: {$this->mealPlanId}");
-            return;
-        }
+{
+    Log::info("[JOB_SINGLE] Iniciando procesamiento para mealType: {$this->mealType}, mealIndex: {$this->mealIndex}, mealPlanId: {$this->mealPlanId}");
 
-        $planData = $mealPlan->plan_data;
-        
-        $recipe = $planData['meal_plan'][$this->mealType][$this->mealIndex] ?? null;
-
-        if (!$recipe || empty($recipe['details']['image_prompt'])) {
-            Log::info("[JOB_SINGLE] No hay prompt para {$this->mealType}[{$this->mealIndex}] en plan {$this->mealPlanId}");
-            return;
-        }
-
-        $prompt = $recipe['details']['image_prompt'];
-        Log::info("[JOB_SINGLE] Procesando '{$prompt}' para plan {$this->mealPlanId}");
-
-        $imageUrl = $this->generateAndStoreImageForPrompt($prompt);
-
-        if ($imageUrl) {
-            Log::info("[JOB_SINGLE] URL generada: {$imageUrl}. Actualizando BD.");
-            
-            // Actualizamos el JSON con la nueva URL
-            $planData['meal_plan'][$this->mealType][$this->mealIndex]['details']['image_url'] = $imageUrl;
-
-            // Actualización directa a la BD
-            DB::table('meal_plans')
-              ->where('id', $this->mealPlanId)
-              ->update(['plan_data' => json_encode($planData)]);
-              
-            Log::info("[JOB_SINGLE] ¡Éxito! Plan {$this->mealPlanId} actualizado para '{$prompt}'.");
-        }
+    $mealPlan = MealPlan::find($this->mealPlanId);
+    if (!$mealPlan) {
+        Log::warning("[JOB_SINGLE] No se encontró MealPlan con ID: {$this->mealPlanId}");
+        return;
     }
 
+    $planData = $mealPlan->plan_data;
+    Log::info("[JOB_SINGLE] plan_data cargado", ['plan_data_keys' => array_keys($planData['meal_plan'] ?? [])]);
+
+    // Manejar la sección de alternativas de forma diferente debido a su estructura JSON
+    if ($this->mealType === 'desayuno' || $this->mealType === 'almuerzo' || $this->mealType === 'cena' || $this->mealType === 'snacks') {
+        $recipe = $planData['meal_plan'][$this->mealType][$this->mealIndex] ?? null;
+        Log::info("[JOB_SINGLE] Buscando receta en meal_plan.{$this->mealType}[{$this->mealIndex}]", ['recipe' => $recipe]);
+    } else {
+        $recipe = $planData['meal_plan']['alternatives'][$this->mealType] ?? null;
+        Log::info("[JOB_SINGLE] Buscando receta en meal_plan.alternatives.{$this->mealType}", ['recipe' => $recipe]);
+    }
+
+    if (!$recipe || empty($recipe['details']['image_prompt'])) {
+        Log::warning("[JOB_SINGLE] No hay receta o image_prompt para {$this->mealType}[{$this->mealIndex}] en plan {$this->mealPlanId}", [
+            'recipe_exists' => !empty($recipe),
+            'image_prompt_exists' => isset($recipe['details']['image_prompt']),
+            'image_prompt' => $recipe['details']['image_prompt'] ?? 'No disponible'
+        ]);
+        return;
+    }
+
+    $prompt = $recipe['details']['image_prompt'];
+    Log::info("[JOB_SINGLE] Procesando '{$prompt}' para plan {$this->mealPlanId}");
+
+    $imageUrl = $this->generateAndStoreImageForPrompt($prompt);
+
+    if ($imageUrl) {
+        Log::info("[JOB_SINGLE] URL generada: {$imageUrl}. Actualizando BD.");
+        // Actualizar el JSON con la nueva URL de la imagen
+        if ($this->mealType === 'desayuno' || $this->mealType === 'almuerzo' || $this->mealType === 'cena' || $this->mealType === 'snacks') {
+            $planData['meal_plan'][$this->mealType][$this->mealIndex]['details']['image_url'] = $imageUrl;
+        } else {
+            $planData['meal_plan']['alternatives'][$this->mealType]['details']['image_url'] = $imageUrl;
+        }
+
+        try {
+            // Actualización en la base de datos
+            DB::table('meal_plans')
+                ->where('id', $this->mealPlanId)
+                ->update(['plan_data' => json_encode($planData)]);
+            Log::info("[JOB_SINGLE] ¡Éxito! Plan {$this->mealPlanId} actualizado para '{$prompt}'.");
+        } catch (\Exception $e) {
+            Log::error("[JOB_SINGLE] Error al actualizar la base de datos para {$prompt}", [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
+    } else {
+        Log::warning("[JOB_SINGLE] No se generó imageUrl para '{$prompt}' en plan {$this->mealPlanId}");
+    }
+}
     private function generateAndStoreImageForPrompt($prompt)
     {
         try {
             $response = Http::withToken(env('OPENAI_API_KEY'))
                 ->timeout(90)
                 ->post('https://api.openai.com/v1/images/generations', [
-                    'prompt' => "photo of a delicious {$prompt}",
+                    'prompt' => "foto de un delicioso {$prompt}",
                     'model'  => 'dall-e-2',
                     'size'   => '512x512',
                     'n'      => 1,

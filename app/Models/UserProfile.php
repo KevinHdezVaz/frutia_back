@@ -11,6 +11,9 @@ class UserProfile extends Model
 {
     use HasFactory;
 
+    protected $appends = ['streak_history'];
+
+
     protected $fillable = [
         'user_id', 'height', 'weight', 'age', 'sex', 'goal', 'activity_level', 'sport',
         'training_frequency', 'meal_count', 'breakfast_time', 'lunch_time', 'dinner_time',
@@ -33,45 +36,60 @@ class UserProfile extends Model
         'ultima_fecha_racha' => 'date', // Laravel convertirá este campo a un objeto Carbon automáticamente
     ];
 
-    public function actualizarRacha()
+    public function streakLogs()
     {
-        $hoyEnUTC = Carbon::now('UTC');
-        $ultimaFecha = $this->ultima_fecha_racha ? Carbon::parse($this->ultima_fecha_racha) : null;
+        return $this->hasMany(StreakLog::class, 'user_id', 'user_id');
+    }
 
-        // Si ya se completó hoy, no hacer nada.
-        if ($ultimaFecha && $ultimaFecha->isSameDay($hoyEnUTC)) {
-            return;
+    public function getStreakHistoryAttribute()
+    {
+        // Carga la relación 'streakLogs', y de cada registro, extrae solo la fecha.
+        // El resultado es un array de strings con las fechas, ej: ["2025-06-25", "2025-06-26"]
+        // ¡Justo lo que Flutter necesita!
+        return $this->streakLogs()->pluck('completed_at');
+    }
+
+    
+public function actualizarRacha()
+{
+    // Usamos Carbon::now() sin argumentos. Automáticamente usará la zona horaria
+    // que configuraste en config/app.php ('America/Mexico_City').
+    $hoy = Carbon::now();
+    $ultimaFecha = $this->ultima_fecha_racha ? Carbon::parse($this->ultima_fecha_racha) : null;
+
+    // Si ya se completó hoy, no hacer nada.
+    if ($ultimaFecha && $ultimaFecha->isSameDay($hoy)) {
+        return;
+    }
+
+    DB::transaction(function () use ($hoy, $ultimaFecha) {
+        // Calculamos la diferencia de días desde la última vez.
+        $diffInDays = $ultimaFecha ? $hoy->diffInDays($ultimaFecha) : 999;
+
+        // Si la diferencia es de 1 día (ayer), la racha continúa normalmente.
+        if ($diffInDays == 1) {
+            $this->racha_actual++;
+        } else {
+            // Si es cualquier otro día, la racha se rompió y empieza de nuevo en 1.
+            $this->racha_actual = 1;
         }
 
-        DB::transaction(function () use ($hoyEnUTC, $ultimaFecha) {
-            // Calculamos la diferencia de días desde la última vez.
-            $diffInDays = $ultimaFecha ? $hoyEnUTC->diffInDays($ultimaFecha) : 999;
+        $this->ultima_fecha_racha = $hoy->toDateString(); // Guardará la fecha correcta (ej: 2025-06-25)
+        $this->save();
 
-            // Si la diferencia es de 1 día (ayer), la racha continúa normalmente.
-            if ($diffInDays == 1) {
-                $this->racha_actual++;
-            } else {
-                // Si es cualquier otro día, la racha se rompió y empieza de nuevo en 1.
-                // La lógica de "perder" la racha visualmente se manejará en el frontend.
-                $this->racha_actual = 1;
-            }
-
-            $this->ultima_fecha_racha = $hoyEnUTC->toDateString();
-            $this->save();
-
-            // Registrar el día completado en el historial.
-            DB::table('streak_logs')->updateOrInsert(
-                [
-                    'user_id' => $this->user_id,
-                    'completed_at' => $hoyEnUTC->toDateString(),
-                ],
-                [
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]
-            );
-        });
-    }
+        // Registrar el día completado en el historial.
+        DB::table('streak_logs')->updateOrInsert(
+            [
+                'user_id' => $this->user_id,
+                'completed_at' => $hoy->toDateString(), // También guardará la fecha correcta
+            ],
+            [
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]
+        );
+    });
+}
 
 
     public function user()

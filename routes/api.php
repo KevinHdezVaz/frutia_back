@@ -8,6 +8,7 @@ use App\Http\Controllers\PlanController;
 use App\Http\Controllers\RecipeController;
 use App\Http\Controllers\StreakController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\IngredientController;
 use App\Http\Controllers\RecipeImageController;
 
  
@@ -17,7 +18,7 @@ Route::post('/login', [AuthController::class, 'login']);
 Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
 Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 Route::post('/google-login', [AuthController::class, 'googleLogin']);
-
+ 
     
 // Rutas de Google
 Route::get('/auth/google', [AuthController::class, 'redirectToGoogle']);
@@ -46,8 +47,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/summarize', [ChatController::class, 'summarizeConversation']);
 
     Route::post('/update-name', [ChatController::class, 'updateUserName']);
+    Route::get('/ingredient-image/{name}', [IngredientController::class, 'showImage'])->middleware('auth:sanctum');
 
-
+ 
      
     Route::prefix('chat')->group(function () {
         Route::post('/send-voice-message', [ChatController::class, 'sendVoiceMessage']);
