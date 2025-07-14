@@ -2,6 +2,7 @@
 
 namespace App\Http;
 
+use App\Http\Middleware\CheckTrialStatus;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Http\Kernel as HttpKernel;
 
@@ -74,6 +75,7 @@ class Kernel extends HttpKernel
         'auth:admin' => \App\Http\Middleware\AdminAuthenticate::class,
         'mp.webhook' => \App\Http\Middleware\ValidateMercadoPagoWebhook::class,
 
+        'check.trial' => CheckTrialStatus::class,
 
     ];
 }

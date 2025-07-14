@@ -7,7 +7,10 @@ use App\Http\Controllers\ChatController;
 use App\Http\Controllers\PlanController;
 use App\Http\Controllers\RecipeController;
 use App\Http\Controllers\StreakController;
+use App\Http\Controllers\MealLogController;
+use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\WebhookController;
 use App\Http\Controllers\IngredientController;
 use App\Http\Controllers\RecipeImageController;
 
@@ -19,6 +22,9 @@ Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
 Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 Route::post('/google-login', [AuthController::class, 'googleLogin']);
  
+ Route::post('/webhooks/mercadopago', [WebhookController::class, 'handleMercadoPago']);
+
+
     
 // Rutas de Google
 Route::get('/auth/google', [AuthController::class, 'redirectToGoogle']);
@@ -27,6 +33,35 @@ Route::post('login/google', [AuthController::class, 'loginWithGoogle']);
 
  
 Route::middleware('auth:sanctum')->group(function () {
+    
+
+
+    Route::post('/history/log', [MealLogController::class, 'store']); // Guardar una comida
+    Route::get('/history', [MealLogController::class, 'index']);      // Obtener todo el historial
+
+
+    Route::get('/user/name', [AuthController::class, 'getUserName']);
+      // Ruta para actualizar el OneSignal Player ID
+      Route::post('/user/update-onesignal-id', function (Request $request) {
+        $user = Auth::user();
+        $playerId = $request->input('onesignal_player_id');
+
+        if (!$playerId) {
+            return response()->json(['message' => 'onesignal_player_id es requerido'], 400);
+        }
+
+        if ($user->profile) {
+            $user->profile->update(['onesignal_player_id' => $playerId]);
+            return response()->json(['message' => 'Player ID actualizado con éxito.']);
+        }
+
+        return response()->json(['message' => 'Perfil de usuario no encontrado.'], 404);
+    });
+
+    
+
+    Route::post('/payment/create-preference', [PaymentController::class, 'createPreference']);
+
     
      Route::get('/profile', [AuthController::class, 'profile']);
     
@@ -47,6 +82,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/summarize', [ChatController::class, 'summarizeConversation']);
 
     Route::post('/update-name', [ChatController::class, 'updateUserName']);
+ 
     Route::get('/ingredient-image/{name}', [IngredientController::class, 'showImage'])->middleware('auth:sanctum');
 
  

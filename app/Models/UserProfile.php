@@ -15,6 +15,7 @@ class UserProfile extends Model
 
 
     protected $fillable = [
+        'onesignal_player_id', // <--- ¡Añade esta línea!
         'user_id', 'height', 'weight', 'age', 'sex', 'goal', 'activity_level', 'sport',
         'training_frequency', 'meal_count', 'breakfast_time', 'lunch_time', 'dinner_time',
         'dietary_style', 'budget', 'cooking_habit', 'eats_out', 'disliked_foods',

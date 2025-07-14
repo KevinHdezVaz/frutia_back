@@ -2,14 +2,16 @@
 
 namespace App\Http\Controllers;
 
+use Carbon\Carbon;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Kreait\Firebase\Factory;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
-use Kreait\Firebase\Auth as FirebaseAuth;
 use Illuminate\Support\Facades\Validator;
-use Kreait\Firebase\Factory;
+use Kreait\Firebase\Auth as FirebaseAuth;
+use Illuminate\Support\Facades\Log;
 
 class AuthController extends Controller
 {
@@ -30,30 +32,47 @@ class AuthController extends Controller
             ->createAuth();
     }
 
-    public function register(Request $request)
-    {
-        // 1. Validar los datos básicos para el registro.
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users',
-            'password' => 'required|string|min:6',
-        ]);
+ 
+public function register(Request $request)
+{
+    // 1. Validar los datos básicos para el registro.
+    $validated = $request->validate([
+        'name' => 'required|string|max:255',
+        'email' => 'required|string|email|max:255|unique:users',
+        'password' => 'required|string|min:6',
+    ]);
 
-        // 2. Hashear la contraseña por seguridad.
-        $validated['password'] = Hash::make($validated['password']);
+    Log::info('Datos validados para registro:', $validated);
 
-        // 3. Crear el usuario en la base de datos.
-        $user = User::create($validated);
+    // 2. Hashear la contraseña por seguridad.
+    $validated['password'] = Hash::make($validated['password']);
+    Log::info('Contraseña hasheada.');
 
-        // 4. Crear un token para que la app pueda iniciar sesión automáticamente.
-        $token = $user->createToken('auth_token')->plainTextToken;
+    // --- INICIA CAMBIO ---
+    // 3. Añadir los datos del período de prueba.
+    $validated['trial_ends_at'] = Carbon::now()->addDays(5);
+    $validated['subscription_status'] = 'trial';
 
-        // 5. Devolver el usuario y el token a la app Flutter.
-        return response()->json([
-            'user' => $user,
-            'token' => $token,
-        ], 201); // 201: Created
-    }
+    Log::info('Datos de prueba añadidos:', [
+        'trial_ends_at' => $validated['trial_ends_at'],
+        'subscription_status' => $validated['subscription_status'],
+    ]);
+    // --- TERMINA CAMBIO ---
+
+    // 4. Crear el usuario en la base de datos con todos los datos.
+    $user = User::create($validated);
+    Log::info('Usuario creado:', ['id' => $user->id, 'email' => $user->email]);
+
+    // 5. Crear un token para que la app pueda iniciar sesión automáticamente.
+    $token = $user->createToken('auth_token')->plainTextToken;
+    Log::info('Token generado para el usuario.', ['token' => $token]);
+
+    // 6. Devolver el usuario y el token a la app Flutter.
+    return response()->json([
+        'user' => $user,
+        'token' => $token,
+    ], 201); // 201: Created
+}
 
     /**
      * Inicia sesión para un usuario existente.
@@ -79,8 +98,6 @@ class AuthController extends Controller
     }
 
  
-
-
     public function googleLogin(Request $request)
     {
         try {
@@ -106,60 +123,29 @@ class AuthController extends Controller
                 $firebaseUid = $claims->get('sub');
                 $email = $claims->get('email');
                 $name = $claims->get('name') ?? 'Usuario Google';
-                $audience = $claims->get('aud');
-    
-                \Log::info("Token decodificado:", [
-                    'issuer' => $claims->get('iss'),
-                    'audience' => $audience,
-                    'email' => $email,
-                    'firebase_uid' => $firebaseUid
-                ]);
-    
-                $serviceAccount = json_decode(file_get_contents(
-                    storage_path('app/firebase/frutia-fd201-firebase-adminsdk-fbsvc-46154c6523.json')
-                ), true);
                 
-                $expectedAudience = $serviceAccount['project_id'] ?? null;
-                
-                if (!$expectedAudience) {
-                    throw new \Exception("Project ID no configurado en service account");
-                }
-    
-                $audienceMatch = false;
-                if (is_array($audience)) {
-                    $audienceMatch = in_array($expectedAudience, $audience);
-                } else {
-                    $audienceMatch = ($audience === $expectedAudience);
-                }
-    
-                if (!$audienceMatch) {
-                    throw new \Exception(sprintf(
-                        "Audience no coincide. Esperado: %s, Recibido: %s",
-                        $expectedAudience,
-                        is_array($audience) ? json_encode($audience) : $audience
-                    ));
-                }
-    
+                // --- INICIA CAMBIO ---
+                // Busca un usuario por email. Si no existe, lo crea con los datos del segundo array.
+                // Aquí es donde añadimos la lógica de la prueba gratuita para los NUEVOS usuarios de Google.
                 $user = User::firstOrCreate(
-                    ['email' => $email],
-                    [
+                    ['email' => $email], // Atributos para buscar al usuario
+                    [                   // Atributos para usar si el usuario se CREA
                         'name' => $name,
-                        'password' => Hash::make(uniqid()),
+                        'password' => Hash::make(uniqid()), // Contraseña aleatoria ya que usan Google
                         'firebase_uid' => $firebaseUid,
-                        'auth_provider' => 'google'
+                        'auth_provider' => 'google',
+                        'trial_ends_at' => Carbon::now()->addDays(5),
+                        'subscription_status' => 'trial',
                     ]
                 );
+                // --- TERMINA CAMBIO ---
     
                 
                 $token = $user->createToken('auth_token')->plainTextToken;
     
                 return response()->json([
                     'success' => true,
-                    'user' => [
-                        'id' => $user->id,
-                        'name' => $user->nombre,
-                        'email' => $user->email,
-                    ],
+                    'user' => $user, // Devolvemos el objeto de usuario completo
                     'token' => $token,
                 ]);
     
@@ -189,7 +175,14 @@ class AuthController extends Controller
     
 
 
-    
+    public function getUserName(Request $request)
+    {
+        return response()->json([
+            'name' => $request->user()->name,
+        ]);
+    }
+
+
     public function logout(Request $request)
     {
         $request->user()->tokens()->delete();
@@ -197,11 +190,23 @@ class AuthController extends Controller
         return response()->json(['message' => 'Cierre de sesión exitoso']);
     }
  
-    public function profile(Request $request)
-{
-    // Cargamos el usuario con su perfil Y su plan activo
-    return response()->json($request->user()->load(['profile', 'activePlan']));
-}
+ public function profile(Request $request)
+    {
+        // --- INICIA CORRECCIÓN ---
+        // Obtenemos el usuario autenticado
+        $user = $request->user();
+        
+        // Cargamos la relación 'profile' para asegurarnos de que venga con el usuario.
+        // Usamos loadMissing para no volver a cargarla si ya está presente.
+        $user->loadMissing('profile');
+
+        // Devolvemos la estructura JSON exacta que Flutter espera.
+        return response()->json([
+            'user' => $user,
+            'profile' => $user->profile, // Accedemos a la relación ya cargada
+        ]);
+        // --- TERMINA CORRECCIÓN ---
+    }
 
 
     public function forgotPassword(Request $request)

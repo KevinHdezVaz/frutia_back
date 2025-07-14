@@ -5,6 +5,8 @@ use Pusher\Pusher;
 use App\Models\User;
 use App\Models\Message;
 use App\Models\ChatSession;
+use App\Models\MealPlan; // Importar el modelo MealPlan
+
 use Illuminate\Http\Request;
 use App\Services\LumorahAIService;
 use Illuminate\Support\Facades\DB;
@@ -31,13 +33,35 @@ class ChatController extends Controller
         );
     }
 
+  
     private function initializeService(Request $request)
     {
         $user = Auth::user();
         $userName = null;
+        $mealPlanData = null;
+        $userProfile = null;
+
         if ($user) {
-            $usuario = User::where('id', $user->id)->first();
-            $userName = $usuario ? $usuario->nombre : null;
+            $user->load('profile');
+            
+            // --- OPTIMIZACIÓN ---
+            // Usamos directamente el objeto $user que ya tenemos.
+            // La columna en tu base de datos es 'name', no 'nombre'.
+            $userName = $user->name; 
+            $userProfile = $user->profile;
+            // --- FIN OPTIMIZACIÓN ---
+
+            $mealPlan = MealPlan::where('user_id', $user->id)
+                ->where('is_active', true)
+                ->latest('created_at')
+                ->first();
+
+            // Nos aseguramos de que plan_data sea siempre un array.
+            if ($mealPlan && $mealPlan->plan_data) {
+                $mealPlanData = is_array($mealPlan->plan_data) 
+                    ? $mealPlan->plan_data 
+                    : json_decode($mealPlan->plan_data, true);
+            }
         }
 
         if (!$userName && $request->session_id) {
@@ -47,10 +71,15 @@ class ChatController extends Controller
             $userName = $session->user_name ?? null;
         }
 
-        Log::info('Initializing service with user name:', ['name' => $userName]);
-
-        $this->lumorahService = new LumorahAIService($userName, 'es');
+        $this->lumorahService = new LumorahAIService(
+            $userName,
+            $userProfile->language ?? 'es',
+            $mealPlanData,
+            $userProfile
+        );
     }
+    
+    
 
     protected function generateSessionTitle($message)
     {
@@ -269,76 +298,8 @@ class ChatController extends Controller
         }
     }
 
-    public function summarizeConversation(Request $request)
-    {
-        $request->validate([
-            'messages' => 'required|array',
-            'messages.*.text' => 'required|string',
-            'messages.*.is_user' => 'required|boolean',
-            'messages.*.created_at' => 'required|date',
-            'session_id' => 'nullable|exists:chat_sessions,id',
-        ]);
-
-        $this->initializeService($request);
-
-        try {
-            $messages = [];
-            foreach ($request->messages as $msg) {
-                $messages[] = [
-                    'role' => $msg['is_user'] ? 'user' : 'assistant',
-                    'content' => $msg['text'],
-                ];
-            }
-
-            $summaryPrompt = "Resume la siguiente conversación de manera concisa y clara, capturando los temas principales y las emociones expresadas. Mantén el resumen en menos de 100 palabras.";
-            $messages[] = ['role' => 'system', 'content' => $summaryPrompt];
-
-            $summary = $this->callOpenAIForSummary($messages);
-
-            if (!is_string($summary) || empty($summary)) {
-                Log::warning('Respuesta de OpenAI para resumen inválida, usando mensaje por defecto.');
-                $summary = "La conversación abordó varios temas. Sigamos explorando lo que te importa.";
-            }
-
-            return response()->json([
-                'success' => true,
-                'summary' => $summary,
-            ], 200);
-        } catch (\Exception $e) {
-            Log::error('Error al resumir conversación: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'error' => 'Error al resumir la conversación',
-                'message' => $e->getMessage(),
-            ], 500);
-        }
-    }
-
-    private function callOpenAIForSummary($messages)
-    {
-        try {
-            $response = Http::withHeaders([
-                'Authorization' => 'Bearer '.env('OPENAI_API_KEY'),
-                'Content-Type' => 'application/json',
-            ])->post('https://api.openai.com/v1/chat/completions', [
-                'model' => 'gpt-4o-mini',
-                'messages' => $messages,
-                'max_tokens' => 200,
-                'temperature' => 0.7,
-                'top_p' => 0.9,
-            ]);
-
-            if ($response->successful()) {
-                return $response->json()['choices'][0]['message']['content'];
-            }
-
-            Log::error('Error en OpenAI al resumir: ' . $response->body());
-            return null;
-        } catch (\Exception $e) {
-            Log::error('Excepción en OpenAI al resumir: ' . $e->getMessage());
-            return null;
-        }
-    }
+   
+   
 
     public function sendMessage(Request $request)
     {
@@ -348,73 +309,81 @@ class ChatController extends Controller
             'is_temporary' => 'boolean',
             'user_name' => 'nullable|string|max:100',
         ]);
-    
+
+        // La inicialización del servicio ahora incluirá el plan de alimentación
         $this->initializeService($request);
-    
+
         try {
             $promptData = $this->lumorahService->generatePrompt($request->message);
-    
+
             $contextMessages = [];
             if ($request->session_id && !$request->is_temporary) {
                 $contextMessages = $this->getConversationContext($request->session_id);
             }
-    
+
             $aiResponse = $this->lumorahService->callOpenAI($request->message, $promptData['system_prompt'], $contextMessages);
-    
+
             if (!is_string($aiResponse) || empty($aiResponse)) {
                 Log::warning('Respuesta de OpenAI inválida, usando mensaje por defecto.');
                 $aiResponse = $this->lumorahService->getDefaultResponse();
             }
-    
+
             $sessionId = $request->session_id;
-    
+
             if ($request->is_temporary) {
                 return response()->json([
                     'success' => true,
                     'ai_message' => [
                         'text' => $aiResponse,
                         'is_user' => false,
-                     ],
+                    ],
                     'session_id' => null,
                 ], 200);
             }
-    
+
             DB::transaction(function () use ($request, $aiResponse, &$sessionId, $promptData) {
                 if (!$sessionId) {
                     $sessionId = $this->createNewSession($request->message);
                 }
-    
+
                 Message::create([
                     'chat_session_id' => $sessionId,
                     'user_id' => Auth::id(),
                     'text' => $request->message,
                     'is_user' => true,
-                  
+
                 ]);
-    
+
                 Message::create([
                     'chat_session_id' => $sessionId,
                     'user_id' => null,
                     'text' => $aiResponse,
                     'is_user' => false,
-          
+
                 ]);
-    
+
+
+                  // --- UBICACIÓN CORRECTA ---
+                // Justo después de guardar los mensajes y antes de terminar la transacción.
+                $user = Auth::user();
+                if ($user->subscription_status !== 'active') {
+                    $user->increment('message_count');
+                    Log::info("Incrementado el contador de mensajes para el usuario {$user->id}. Nuevo total: " . ($user->message_count + 1));
+                }
+                
                 $this->pusher->trigger('chat-channel', 'new-message', [
                     'session_id' => $sessionId,
                     'message' => $aiResponse,
                     'is_user' => false,
                 ]);
             });
-    
+
             return response()->json([
                 'success' => true,
                 'ai_message' => [
-                    // ===== ESTA ES LA LÍNEA CORREGIDA =====
                     'text' => $aiResponse,
-                    // ======================================
                     'is_user' => false,
-                     
+
                 ],
                 'session_id' => $sessionId,
             ], 200);
@@ -435,6 +404,7 @@ class ChatController extends Controller
             'user_name' => 'nullable|string',
         ]);
 
+        // La inicialización del servicio ahora incluirá el plan de alimentación
         $this->initializeService($request);
 
         try {
@@ -451,7 +421,7 @@ class ChatController extends Controller
                 'ai_message' => [
                     'text' => $aiResponse,
                     'is_user' => false,
-                 
+
                 ],
             ], 200);
         } catch (\Exception $e) {
@@ -475,6 +445,7 @@ class ChatController extends Controller
             'user_name' => 'nullable|string',
         ]);
 
+        // La inicialización del servicio ahora incluirá el plan de alimentación
         $this->initializeService($request);
 
         try {
@@ -499,7 +470,7 @@ class ChatController extends Controller
                 'ai_message' => [
                     'text' => $welcomeMessage,
                     'is_user' => false,
-                    
+
                 ],
             ], 200);
         } catch (\Exception $e) {
@@ -515,12 +486,14 @@ class ChatController extends Controller
         }
     }
 
+
     public function updateUserName(Request $request)
     {
         $request->validate([
             'name' => 'required|string|max:100',
         ]);
 
+        // La inicialización del servicio ahora incluirá el plan de alimentación
         $this->initializeService($request);
 
         try {
@@ -537,7 +510,7 @@ class ChatController extends Controller
                 'ai_message' => [
                     'text' => $responseMessage,
                     'is_user' => false,
-                   
+
                 ],
             ], 200);
         } catch (\Exception $e) {
@@ -559,9 +532,23 @@ class ChatController extends Controller
         ]);
 
         try {
+            $user = Auth::user();
+            $user->load('profile'); // Asegura que el perfil esté cargado
+            $userName = $user ? $user->nombre : null;
+            $userProfile = $user->profile; // Asigna el objeto Profile
+
+            $mealPlan = MealPlan::where('user_id', $user->id)
+                ->where('is_active', true)
+                ->latest('created_at')
+                ->first();
+
+            $mealPlanData = $mealPlan ? $mealPlan->plan_data : null;
+
             $voiceService = new LumorahAIService(
-                $request->user_name,
-                'es'
+                $userName,
+                $userProfile->language ?? 'es', // Usa el idioma del perfil si está disponible
+                $mealPlanData,
+                $userProfile // Pasa el perfil de usuario aquí también
             );
 
             $promptData = $voiceService->generateVoicePrompt($request->message);
@@ -572,8 +559,8 @@ class ChatController extends Controller
             }
 
             $aiResponse = $voiceService->callOpenAI(
-                $request->message, 
-                $promptData['system_prompt'], 
+                $request->message,
+                $promptData['system_prompt'],
                 $contextMessages
             );
 
@@ -587,14 +574,14 @@ class ChatController extends Controller
                         'user_id' => Auth::id(),
                         'text' => $request->message,
                         'is_user' => true,
-                     ]);
+                    ]);
 
                     Message::create([
                         'chat_session_id' => $sessionId,
                         'user_id' => null,
                         'text' => $formattedResponse,
                         'is_user' => false,
-                     ]);
+                    ]);
 
                     $this->pusher->trigger('chat-channel', 'new-message', [
                         'session_id' => $sessionId,
@@ -609,7 +596,7 @@ class ChatController extends Controller
                 'ai_message' => [
                     'text' => $formattedResponse,
                     'is_user' => false,
-                 ],
+                ],
                 'session_id' => $sessionId,
             ], 200);
         } catch (\Exception $e) {

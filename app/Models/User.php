@@ -2,9 +2,11 @@
 
 namespace App\Models;
 
+use App\Models\MealLog; 
 use App\Models\MealPlan;
 use App\Models\StreakLog;
 use App\Models\UserProfile;
+use Carbon\Carbon;
 use Laravel\Sanctum\HasApiTokens;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -22,7 +24,10 @@ class User extends Authenticatable
         'email',
         'password',
         'firebase_uid', // Añadido para Google Sign-In
+        'trial_ends_at',
+        'message_count', // <-- AÑADE ESTA LÍNEA
 
+        'subscription_status',
     ];
 
     /**
@@ -49,10 +54,25 @@ class User extends Authenticatable
         return $this->hasOne(UserProfile::class);
     }
 
+
+    public function hasTrialExpired()
+    {
+        // La prueba ha expirado si el estado es 'trial' y la fecha de finalización ya pasó.
+        return $this->subscription_status === 'trial' && Carbon::now()->isAfter($this->trial_ends_at);
+    }
+
+    
     public function streakLogs()
     {
         return $this->hasMany(StreakLog::class);
     }
+    
+    public function mealLogs()
+    {
+        // Esto define una relación "Uno a Muchos" con el modelo MealLog
+        return $this->hasMany(MealLog::class);
+    }
+
     
     /**
      * Define la relación: un Usuario tiene un Plan de Comidas activo.

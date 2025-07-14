@@ -6,21 +6,22 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
-// RECOMENDACIÓN: Renombrar la clase y el archivo a FrutiaAIService.php
 class LumorahAiService
 {
     private $userName;
     private $userLanguage;
     private $detectedTopic = 'general';
     private $supportedLanguages = ['es', 'en', 'fr', 'pt'];
+    private $mealPlanData = null;
+    private $userProfile = null; // Propiedad para almacenar el perfil del usuario
 
-    public function __construct($userName = null, $language = 'es')
+    public function __construct($userName = null, $language = 'es', $mealPlanData = null, $userProfile = null)
     {
         $this->userName = $userName ? Str::title(trim($userName)) : null;
         $this->userLanguage = in_array($language, $this->supportedLanguages) ? $language : 'es';
-        Log::info('FrutiaAIService initialized with userName:', ['userName' => $this->userName]);
+        $this->mealPlanData = $mealPlanData;
+        $this->userProfile = $userProfile;
     }
-
     public function setUserName($name)
     {
         $this->userName = $name ? Str::title(trim($name)) : null;
@@ -33,65 +34,85 @@ class LumorahAiService
             ? $this->getPersonalizedGreeting($this->userName, $welcomeEmoji)
             : $this->getAnonymousGreeting($welcomeEmoji);
     }
-    
-    // --- NUEVAS FUNCIONES PARA ANÁLISIS DE TEMA ---
 
-    /**
-     * Analiza el mensaje del usuario para detectar un tema específico.
-     */
     private function analyzeUserInput($message)
     {
         $message = strtolower($message);
         $topics = $this->getTopicKeywords();
-
         foreach ($topics as $topic => $keywords) {
             if ($this->containsAny($message, $keywords)) {
                 $this->detectedTopic = $topic;
-                Log::info('Topic detected:', ['topic' => $topic]);
-                return; // Detenerse en el primer tema que coincida
+                return;
             }
         }
-
-        // Si no se encuentra ningún tema, se queda como 'general'
         $this->detectedTopic = 'general';
     }
 
-    /**
-     * Define las palabras clave para cada tema de nutrición.
-     */
     private function getTopicKeywords()
     {
         return [
+            'food_inquiry' => ['puedo comer', 'cuantas calorias tiene', 'es bueno comer', 'que pasa si como', 'makis', 'pizza', 'hamburguesa', 'tacos', 'sushi', 'helado', 'cerveza', 'vino', 'quinoa'],
             'weight_loss' => ['perder peso', 'bajar de peso', 'adelgazar', 'bajar kilos', 'quemar grasa'],
             'muscle_gain' => ['aumentar músculo', 'ganar masa muscular', 'crecer', 'proteína para', 'gym'],
-            'energy_boost' => ['más energía', 'estoy cansado', 'fatiga', 'sin fuerzas', 'bajón'],
-            'healthy_eating' => ['comer más sano', 'comer mejor', 'alimentación saludable', 'dieta balanceada', 'recetas'],
-            'cravings' => ['antojos', 'ansiedad por comer', 'ganas de dulce', 'controlar el hambre'],
-            'hydration' => ['beber agua', 'hidratación', 'cuánta agua', 'estar hidratado'],
         ];
     }
-    
-    /**
-     * Devuelve las instrucciones específicas para la IA según el tema detectado.
-     */
+
     private function getTopicInstructions()
     {
         $instructions = [
-            'general' => "Ofrece consejos generales sobre bienestar y alimentación balanceada. Anima al usuario a ser más específico si lo desea.",
-            'weight_loss' => "Enfócate en el déficit calórico sostenible. Sugiere intercambios inteligentes y destaca proteína/fibra para saciedad. Promueve paciencia y constancia.",
-            'muscle_gain' => "Habla sobre superávit calórico moderado y alta ingesta de proteínas (ej: 1.6-2.2g/kg). Sugiere fuentes de proteína magra y carbohidratos complejos.",
-            'energy_boost' => "Explica energía rápida vs. sostenida (carbohidratos complejos + fibra). Recomienda snacks que combinen fibra, proteína y grasas saludables. Menciona la hidratación.",
-            'healthy_eating' => "Ofrece ideas para incorporar más vegetales/frutas. Habla de planificación de comidas y ejemplos de platos balanceados (ej: método del plato de Harvard).",
-            'cravings' => "Valida antojos sin juzgar. Explica causas (hábito, nutrientes, deshidratación). Ofrece alternativas saludables y estrategias (ej: esperar 15min, beber agua).",
-            'hydration' => "Explica beneficios de la hidratación. Recomienda ingesta general (ej: 2-3L, aclarando que varía). Da trucos para beber más agua (ej: botellas con marcador, sabores naturales)."
+            // --- INSTRUCCIÓN MEJORADA ---
+            'food_inquiry' => "El usuario pregunta sobre una comida. Tu proceso DEBE ser:
+            1.  **VERIFICAR**: Revisa la lista 'Plan de Hoy' que te proporciono. ¿El alimento que menciona el usuario (ej. quinoa, pollo, etc.) está en esa lista?
+            2.  **RESPONDER (SI ESTÁ EN EL PLAN)**: Si el alimento está en el plan, tu respuesta DEBE ser afirmativa y específica. Ejemplo: '¡Claro! La quinoa ya es parte de tu cena de hoy. El plan indica una porción de **150g (que son unas 180 kcal)**, lo cual es perfecto para tu cena de **590 kcal**. ¡Asegúrate de disfrutarla con el resto de tus ingredientes!'
+            3.  **RESPONDER (SI NO ESTÁ EN EL PLAN)**: Si el alimento no está en el plan, estima sus calorías y compáralas con el presupuesto de la comida más cercana (almuerzo/cena). Ejemplo: 'Los makis no están en tu plan de hoy, pero puedes integrarlos. 8 piezas tienen unas 400 kcal. Como tu cena tiene un presupuesto de **590 kcal**, podrías comerlos en lugar de tu cena planeada. ¡Solo ten cuidado con las salsas!'",
+            'general' => "Ofrece consejos generales sobre bienestar. Anima al usuario a ser más específico.",
+            // ... otras instrucciones
         ];
 
-        return $instructions[$this->detectedTopic] ?? $instructions['general'];
+        $baseInstruction = $instructions[$this->detectedTopic] ?? $instructions['general'];
+        $personalData = '';
+
+        if ($this->userProfile) {
+            $personalData = "\n**Perfil del Usuario:**\n- **Objetivo**: " . ($this->userProfile->goal ?? 'bienestar general') . ".";
+        }
+
+        if ($this->mealPlanData && is_array($this->mealPlanData)) {
+            $plan = $this->mealPlanData;
+            $dailyCalories = $plan['nutritionPlan']['targetMacros']['calories'] ?? 'no especificado';
+            
+            // --- CONSTRUCCIÓN DEL CONTEXTO DETALLADO DEL PLAN ---
+            $planSummary = "\n\n**Resumen del Plan Activo del Usuario (¡DEBES USAR ESTOS DATOS!):**";
+            $planSummary .= "\n- **Objetivo Calórico Diario Total**: **{$dailyCalories} kcal**.";
+            
+            $planSummary .= "\n\n**Plan de Hoy:**";
+            foreach ($plan['nutritionPlan']['meals'] as $mealName => $components) {
+                $mealCalories = $this->calculateMealCalories($components);
+                $planSummary .= "\n- **{$mealName} ({$mealCalories} kcal):** ";
+                $ingredientNames = [];
+                foreach ($components as $component) {
+                    $ingredientNames[] = $component['options'][0]['name'] ?? 'ingrediente';
+                }
+                $planSummary .= implode(', ', $ingredientNames) . ".";
+            }
+            // --- FIN DE LA CONSTRUCCIÓN DEL CONTEXTO ---
+
+            $personalData .= $planSummary;
+        }
+
+        return $baseInstruction . ($personalData ? "\n\n" . $personalData : "");
     }
 
-    /**
-     * Función de ayuda para buscar palabras clave en un texto.
-     */
+    private function calculateMealCalories(array $mealComponents): int
+    {
+        $totalCalories = 0;
+        foreach ($mealComponents as $component) {
+            if (isset($component['options'][0]['calories'])) {
+                $totalCalories += (int)$component['options'][0]['calories'];
+            }
+        }
+        return $totalCalories;
+    }
+ 
     private function containsAny($text, $keywords)
     {
         foreach ($keywords as $keyword) {
@@ -102,11 +123,8 @@ class LumorahAiService
         return false;
     }
 
-    // --- FIN DE LAS NUEVAS FUNCIONES ---
-
     public function generatePrompt($userMessage)
     {
-        // Se añade la llamada para analizar el mensaje antes de crear el prompt
         $this->analyzeUserInput($userMessage);
 
         $userName = $this->userName ?: '';
@@ -119,10 +137,9 @@ class LumorahAiService
             'language' => $this->userLanguage,
         ];
     }
-    
+
     public function generateVoicePrompt($userMessage)
     {
-        // Se añade también aquí para el chat de voz
         $this->analyzeUserInput($userMessage);
 
         $userName = $this->userName ?: '';
@@ -153,15 +170,16 @@ class LumorahAiService
             ])->post('https://api.openai.com/v1/chat/completions', [
                 'model' => 'gpt-4o-mini',
                 'messages' => $messages,
-                'max_tokens' => 800,
-                'temperature' => 0.6,
-                'top_p' => 0.9,
+             'max_tokens' => 150, // Limitar longitud
+            'temperature' => 0.5, // Menos creatividad, más precisión
+            'frequency_penalty' => 0.5, // Reduce repeticiones
+            'presence_penalty' => 0.5, // Evita divagaciones
             ]);
-            
+
             if ($response->successful()) {
                 return $response->json()['choices'][0]['message']['content'] ?? '';
             }
-            
+
             Log::error('OpenAI API request failed', ['status' => $response->status(), 'body' => $response->body()]);
             return $this->getDefaultResponse();
 
@@ -171,78 +189,44 @@ class LumorahAiService
         }
     }
 
+  
+
     private function buildSystemPrompt($userName)
     {
         $name = $userName ? ", $userName" : "";
-        $topicInstructions = $this->getTopicInstructions();
-
+        $topicAndProfileInstructions = $this->getTopicInstructions();
+        
         return <<<PROMPT
-# PERSONALIDAD
-Eres Frutia, un nutri-coach IA amigable, motivador y positivo. Usas lenguaje sencillo basado en ciencia, como un amig@ expert@. Incluye emojis de 🍎, 🥗, 💧, 💪.
+# ROL Y OBJETIVO
+Eres Frutia, un coach nutricional con IA, amigable, experto y motivador. Tu objetivo principal es ayudar al usuario a seguir su plan de alimentación.
 
-# INSTRUCCIONES CLAVE
-1.  **Saludo**: Siempre saluda cálidamente. Usa el nombre si lo tienes. Ej: "¡Hola$name! Qué bueno verte por aquí 🍎".
-2.  **Objetivo**: Ayudar a construir una relación sana con la comida y alcanzar objetivos de bienestar.
-3.  **Estructura de Respuesta**:
-    -   **Validación**: Reconoce la pregunta/sentimiento.
-    -   **Información Clara**: Útil y basada en evidencia.
-    -   **Consejos Prácticos**: 2-3 consejos claros y accionables (lista/emojis).
-    -   **Motivación**: Frase de ánimo.
-    -   **Pregunta Abierta**: Para fomentar la conversación.
-4.  **Instrucciones por Tema (Tópico: {$this->detectedTopic})**:
-    {$topicInstructions}
-5.  **DISCLAIMER DE SEGURIDAD (¡MUY IMPORTANTE!)**:
-    -   **NO eres un médico**. No diagnostiques ni prescribas para condiciones médicas.
-    -   Si se menciona condición médica, DEBE incluir: "Para tu caso específico, lo mejor es que un médico o nutricionista te dé un plan personalizado. Mi consejo es de carácter general."
-    -   Enfócate en hábitos sostenibles, no en promesas extremas.
+# REGLAS DE RESPUESTA (OBLIGATORIAS)
+1.  **Personalización Total**: DEBES usar los datos del "Resumen del Plan Activo del Usuario" para dar respuestas específicas y numéricas. No uses frases condicionales como "si tu plan lo permite". **Afirma los hechos**: "Tu plan te asigna X calorías para la cena...". Si el usuario pregunta por un alimento, PRIMERO verifica si está en su "Plan de Hoy".
+2.  **Estructura Clara**:
+    -   **Saludo Corto**: "¡Hola{$name}!"
+    -   **Validación**: Reconoce su pregunta. "Entiendo que quieres saber sobre la quinoa."
+    -   **Respuesta Directa y Personalizada**: Proporciona la información solicitada, conectándola directamente con los datos del plan del usuario. Usa negritas (`**texto**`) para resaltar datos clave (calorías, cantidades).
+    -   **Cierre Positivo**: Termina con una frase de ánimo.
+3.  **No Prohibir, Guiar**: Nunca prohíbas una comida. Ofrece estrategias para que el usuario tome decisiones informadas.
+4.  **Ser Conciso**: Limita tus respuestas a 2-3 párrafos cortos.
 
-# EJEMPLO DE RESPUESTA IDEAL (Usuario: "estoy sin energía por las tardes")
-¡Hola$name! ☀️ Entiendo perfectamente, esa caída de energía por la tarde es súper común. Suele estar relacionada con lo que comemos al mediodía.
+# CONTEXTO DE LA CONVERSACIÓN ACTUAL
+{$topicAndProfileInstructions}
 
-Para mantener tu motor funcionando a tope, aquí tienes un par de ideas:
-🍎 **Añade proteína y fibra en tu almuerzo**: Un poco de pollo, lentejas o quinoa junto a una buena ensalada ayudan a que la energía se libere más despacio. ¡Adiós al bajón!
-💧 **Hidrátate bien**: A veces, la fatiga es solo sed disfrazada. Asegúrate de beber suficiente agua durante el día.
-💪 **Elige un snack inteligente**: Si necesitas un empujón, una fruta con un puñado de almendras es mucho mejor que algo azucarado.
-
-Recuerda que cada cuerpo es un mundo, pero estos pequeños cambios suelen hacer una gran diferencia. ¡Vamos a intentarlo!
-
-¿Cuál de estos tips te parece más fácil de aplicar en tu día a día?
-
-**Comienza la conversación ahora:**
+Ahora, responde a la última pregunta del usuario basándote en TODAS estas reglas.
 PROMPT;
     }
+
     
-    // --- NUEVA FUNCIÓN PARA EL PROMPT DE VOZ ---
     private function buildSystemVoicePrompt($userName)
     {
-        $name = $userName ? ", $userName" : "";
-        $topicInstructions = $this->getTopicInstructions();
-
-        return <<<PROMPT
-Eres Frutia, un nutri-coach personal con IA. Tu tono es amigable, motivador y positivo. Hablas claro y sencillo, como un amig@ expert@.
-
-Tu meta es ayudar al usuario a tener una relación más sana con la comida.
-
-1.  **Saludo**: Siempre saluda cálidamente. Si conoces el nombre, úsalo.
-2.  **Respuesta**:
-    -   Valida la pregunta del usuario.
-    -   Da información útil y basada en evidencia.
-    -   Ofrece 2-3 consejos prácticos.
-    -   Cierra con motivación y una pregunta abierta.
-3.  **Instrucciones por Tema (Tópico: {$this->detectedTopic})**:
-    {$topicInstructions}
-4.  **IMPORTANTE (DISCLAIMER)**:
-    -   NO eres un médico. No diagnostiques ni prescribas dietas.
-    -   Si el usuario menciona una condición médica, siempre recomienda consultar a un médico o nutricionista profesional. Di: "Para tu caso específico, lo mejor es que un médico o nutricionista te dé un plan personalizado. Mi consejo es de carácter general."
-    -   Enfócate en hábitos sostenibles.
-
-Comienza la conversación ahora:
-PROMPT;
+        return $this->buildSystemPrompt($userName);
     }
+    
 
     public function getDefaultResponse() { /* ... tu código ... */ return "¡Uy! Parece que se me cayó una manzana en el sistema 🍎. Hubo un pequeño error, pero ¿podrías repetirme tu pregunta?"; }
     private function getPersonalizedGreeting($userName, $emoji) { /* ... tu código ... */ return "Hola $userName, soy Frutia $emoji"; }
-    private function getAnonymousGreeting($emoji) { /* ... tu código ... */ return "Hola, soy Frutia $emoji"; }
+    private function getAnonymousGreeting($emoji) { /* ... tu código ... */ return "Hola, soy Frutia $emoji, ¿Como puedo ayudarte hoy?" ; }
     private function getWelcomeEmoji() { /* ... tu código ... */ $emojis = ['🍎', '🌱', '💪', '✨']; return $emojis[array_rand($emojis)];}
     public function formatVoiceResponse($content) { /* ... tu código ... */ return preg_replace('/\s+/', ' ', preg_replace('/[•▪♦▶-]/u', '', preg_replace('/[\x{1F600}-\x{1F64F}|\x{1F300}-\x{1F5FF}|\x{1F900}-\x{1F9FF}|\x{2600}-\x{26FF}|\x{2700}-\x{27BF}]/u', '', preg_replace('/[\*\_]/', '', $content))));}
     public function getUserName() { /* ... tu código ... */ return $this->userName;}

@@ -1,15 +1,11 @@
 <?php
-
 namespace App\Http\Controllers;
 
+use App\Models\FoodImage;
 use App\Models\MealPlan;
-use App\Models\Ingredient;
-use Illuminate\Support\Str;
 use Illuminate\Http\Request;
-use App\Jobs\GenerateRecipeImage;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 
 class PlanController extends Controller
 {
@@ -22,567 +18,367 @@ class PlanController extends Controller
             return response()->json(['message' => 'El perfil del usuario no está completo.'], 400);
         }
 
-        $requiredFields = ['goal', 'dietary_style', 'activity_level'];
-        $missingFields = array_filter($requiredFields, fn($field) => empty($profile->$field));
-        if (!empty($missingFields)) {
-            return response()->json([
-                'message' => 'Faltan datos requeridos: ' . implode(', ', $missingFields)
-            ], 400);
-        }
-
-        $dislikedFoods = $profile->disliked_foods ?? 'Ninguno';
-        $allergies = $profile->allergies ?? 'Ninguna';
-        $sport = is_array($profile->sport) ? implode(', ', $profile->sport) : ($profile->sport ?? 'Ninguno');
-        $dietDifficulties = is_array($profile->diet_difficulties) ? implode(', ', $profile->diet_difficulties) : ($profile->diet_difficulties ?? 'Ninguna');
-        $dietMotivations = is_array($profile->diet_motivations) ? implode(', ', $profile->diet_motivations) : ($profile->diet_motivations ?? 'Ninguna');
-        $preferredName = $profile->preferred_name ?? $user->name ?? 'Usuario';
-        $communicationStyle = $profile->communication_style ?? 'Motivadora';
-        $breakfastTime = $profile->breakfast_time ?? '08:00';
-        $lunchTime = $profile->lunch_time ?? '13:00';
-        $dinnerTime = $profile->dinner_time ?? '20:00';
-        $medicalCondition = $profile->medical_condition ?? 'Ninguna';
-        $mealCount = $profile->meal_count ?? '3 comidas principales';
-        $paisUsuario = $profile->pais ?? 'Peru';
-
-        $currency = match ($paisUsuario) {
-            'Peru' => 'PEN',
-            'Mexico' => 'MXN',
-            'Chile' => 'CLP',
-            'Argentina' => 'ARS',
-            default => 'USD'
-        };
-
-        $stores = match ($paisUsuario) {
-            'Peru' => ['Plaza Vea', 'Tottus', 'Metro'],
-            'Mexico' => ['Walmart Mexico', 'Soriana', 'Chedraui'],
-            'Chile' => ['Jumbo', 'Lider', 'Santa Isabel'],
-            'Argentina' => ['Cota', 'Carrefour', 'Dia'],
-            default => ['Store 1', 'Store 2', 'Store 3']
-        };
-
-        $prompt = "Actúa como un nutricionista experto llamado Frutía. Crea un plan de comidas personalizado para el siguiente perfil:
-        - Nombre preferido: {$preferredName}
-        - Objetivo: {$profile->goal}
-        - Edad: {$profile->age} años
-        - Sexo: {$profile->sex}
-        - Peso: {$profile->weight} kg
-        - Altura: {$profile->height} cm
-        - Estilo de dieta: {$profile->dietary_style}. IMPORTANTE: Todas las recetas deben ser estrictamente compatibles con esta dieta, evitando ingredientes no permitidos (por ejemplo, granos, legumbres, o frutas altas en azúcar para Keto).
-        - Nivel de actividad: {$profile->activity_level}
-        - Deportes practicados: {$sport}
-        - Frecuencia de entrenamiento: {$profile->training_frequency}
-        - Número de comidas al día: {$mealCount}
-        - Horarios de comidas: Desayuno ({$breakfastTime}), Almuerzo ({$lunchTime}), Cena ({$dinnerTime})
-        - Presupuesto: {$profile->budget}
-        - Frecuencia de comer fuera: {$profile->eats_out}
-        - Alimentos que NO le gusta: {$dislikedFoods}
-        - Alergias: {$allergies}
-        - Condición médica: {$medicalCondition}
-        - Estilo de comunicación preferido: {$communicationStyle}
-        - Dificultades con la dieta: {$dietDifficulties}
-        - Motivaciones para seguir la dieta: {$dietMotivations}
-        - País del usuario: {$paisUsuario}. **Considera los precios, moneda ({$currency}) y la disponibilidad general de ingredientes en este país** al sugerir recetas. **Consulta los precios de los ingredientes en las siguientes tiendas: " . implode(', ', $stores) . ".**
-
-        Escribe un 'summary_title' corto y motivador usando el nombre preferido ({$preferredName}) con un tono acorde al estilo de comunicación ({$communicationStyle}).
-
-        En lugar de un solo 'summary_text', genera 3 o 4 textos separados (summary_text_1, summary_text_2, resumen_text_3, y opcionalmente summary_text_4) que expliquen por qué este plan es ideal para el usuario. Cada texto debe ser breve (2-3 oraciones), legible con espacios adecuados, y cubrir una parte específica del resumen:
-        - summary_text_1: Describe el objetivo ({$profile->goal}), nivel de actividad ({$profile->activity_level}), deportes ({$sport}), y cómo el plan apoya estos aspectos.
-        - summary_text_2: Explica cómo se considera la características personales (edad, sexo, peso, altura), preferencias (estilo de dieta, presupuesto, horarios), y restricciones (alimentos no deseados, alergias, condiciones médicas).
-        - summary_text_3: Detalla cómo el plan aborda las dificultades ({$dietDifficulties}) y se alinea con las motivaciones ({$dietMotivations}).
-        - summary_text_4 (opcional): Resalta beneficios adicionales (energía, digestión, bienestar) y un mensaje motivador para cerrar.
-
-        Asegura un plan de comidas para {$mealCount}. 
-        Para cada comida (desayuno, almuerzo, cena, y snacks si {$mealCount} incluye snacks), genera 2 opciones variadas. IMPORTANTE SERAN 2 OPCIONES. Para cada opción, incluye:
-        - Descripción breve
-        - Calorías aproximadas
-        - Tiempo de preparación (en minutos)
-        - Lista de ingredientes con cantidades específicas (por ejemplo, '1 ajo', '500 g de pollo', '2 tazas de espinaca') respetando {$profile->dietary_style}, {$profile->budget}, {$dislikedFoods}, {$allergies}.
-        - Para cada ingrediente, incluye los precios en {$currency} de las tres tiendas principales del país ({$stores[0]}, {$stores[1]}, {$stores[2]}). Si no hay datos exactos, estima precios realistas basados en el mercado de {$paisUsuario}.
-        - Instrucciones paso a paso.
-
-        Para cada comida (desayuno, almuerzo, cena, y snacks si aplica), incluye una opción alternativa en la sección 'alternatives', con la misma estructura que las opciones principales (opción, descripción, calorías, tiempo de preparación, ingredientes con precios, instrucciones, e image_prompt).
-
-        Añade 5 recomendaciones específicas que aborden las dificultades ({$dietDifficulties}), las motivaciones ({$dietMotivations}), y la frecuencia de comer fuera ({$profile->eats_out}). Por ejemplo, sugiere opciones compatibles con {$profile->dietary_style} para comer fuera o estrategias para mantener la constancia.
-
-        Y finalmente agrega imágenes de cada receta en image_prompt, con una descripción simple solo el Nombre de la receta.
-
-        IMPORTANTE: Devuelve la respuesta únicamente en formato JSON válido, sin texto introductorio ni explicaciones adicionales, con esta estructura exacta:
-        {
-            \"summary_title\": \"¡Hola {$preferredName}! Tu plan está listo para ayudarte a brillar.\",
-            \"summary_text_1\": \"Este plan está diseñado para tu objetivo de {$profile->goal}, adaptado a tu {$profile->activity_level} nivel de actividad y deportes ({$sport}). Las recetas te ayudarán a alcanzar tus metas con energía y consistencia.\",
-            \"summary_text_2\": \"Con {$profile->weight} kg, {$profile->height} cm, y {$profile->age} años, las recetas respetan tu {$profile->dietary_style}, presupuesto ({$profile->budget}), horarios ({$breakfastTime}, {$lunchTime}, {$dinnerTime}), {$dislikedFoods}, y {$allergies}}. Todo está personalizado para ti.\",
-            \"summary_text_3\": \"Abordamos tus dificultades ({$dietDifficulties}) con estrategias prácticas y te mantenemos motivado con {$dietMotivations} para que sigas adelante.\",
-            \"summary_text_4\": \"Este plan mejorará tu energía, digestión y bienestar general. ¡Estás a un paso de sentirte increíble!\",
-            \"meal_plan\": {
-                \"desayuno\": [
-                    {
-                        \"opcion\": \"[Nombre de la receta]\",
-                        \"details\": {
-                            \"description\": \"[Descripción breve de la receta]\",
-                            \"image_prompt\": \"[Descripción simple para el generador de imágenes]\",
-                            \"calories\": 0,
-                            \"prep_time_minutes\": 0,
-                            \"ingredients\": [
-                                {
-                                    \"item\": \"[Ingrediente 1]\",
-                                    \"quantity\": \"[Cantidad, e.g., 1 unidad, 500 g]\",
-                                    \"prices\": [
-                                        {\"store\": \"{$stores[0]}\", \"price\": 0, \"currency\": \"{$currency}\"},
-                                        {\"store\": \"{$stores[1]}\", \"price\": 0, \"currency\": \"{$currency}\"},
-                                        {\"store\": \"{$stores[2]}\", \"price\": 0, \"currency\": \"{$currency}\"}
-                                    ]
-                                }
-                            ],
-                            \"instructions\": [\"[Paso 1]\", \"[Paso 2]\"]
-                        }
-                    }
-                ],
-                \"almuerzo\": [
-                    {
-                        \"opcion\": \"[Nombre de la receta]\",
-                        \"details\": {
-                            \"description\": \"[Descripción breve de la receta]\",
-                            \"image_prompt\": \"[Descripción simple para el generador de imágenes]\",
-                            \"calories\": 0,
-                            \"prep_time_minutes\": 0,
-                            \"ingredients\": [
-                                {
-                                    \"item\": \"[Ingrediente 1]\",
-                                    \"quantity\": \"[Cantidad, e.g., 1 unidad, 500 g]\",
-                                    \"prices\": [
-                                        {\"store\": \"{$stores[0]}\", \"price\": 0, \"currency\": \"{$currency}\"},
-                                        {\"store\": \"{$stores[1]}\", \"price\": 0, \"currency\": \"{$currency}\"},
-                                        {\"store\": \"{$stores[2]}\", \"price\": 0, \"currency\": \"{$currency}\"}
-                                    ]
-                                }
-                            ],
-                            \"instructions\": [\"[Paso 1]\", \"[Paso 2]\"]
-                        }
-                    }
-                ],
-                \"cena\": [
-                    {
-                        \"opcion\": \"[Nombre de la receta]\",
-                        \"details\": {
-                            \"description\": \"[Descripción breve de la receta]\",
-                            \"image_prompt\": \"[Descripción simple para el generador de imágenes]\",
-                            \"calories\": 0,
-                            \"prep_time_minutes\": 0,
-                            \"ingredients\": [
-                                {
-                                    \"item\": \"[Ingrediente 1]\",
-                                    \"quantity\": \"[Cantidad, e.g., 1 unidad, 500 g]\",
-                                    \"prices\": [
-                                        {\"store\": \"{$stores[0]}\", \"price\": 0, \"currency\": \"{$currency}\"},
-                                        {\"store\": \"{$stores[1]}\", \"price\": 0, \"currency\": \"{$currency}\"},
-                                        {\"store\": \"{$stores[2]}\", \"price\": 0, \"currency\": \"{$currency}\"}
-                                    ]
-                                }
-                            ],
-                            \"instructions\": [\"[Paso 1]\", \"[Paso 2]\"]
-                        }
-                    }
-                ],
-                \"snacks\": [
-                    {
-                        \"opcion\": \"[Nombre del snack]\",
-                        \"details\": {
-                            \"description\": \"[Descripción breve del snack]\",
-                            \"image_prompt\": \"[Descripción simple para el generador de imágenes]\",
-                            \"calories\": 0,
-                            \"prep_time_minutes\": 0,
-                            \"ingredients\": [
-                                {
-                                    \"item\": \"[Ingrediente 1]\",
-                                    \"quantity\": \"[Cantidad, e.g., 1 unidad, 500 g]\",
-                                    \"prices\": [
-                                        {\"store\": \"{$stores[0]}\", \"price\": 0, \"currency\": \"{$currency}\"},
-                                        {\"store\": \"{$stores[1]}\", \"price\": 0, \"currency\": \"{$currency}\"},
-                                        {\"store\": \"{$stores[2]}\", \"price\": 0, \"currency\": \"{$currency}\"}
-                                    ]
-                                }
-                            ],
-                            \"instructions\": [\"[Paso 1]\", \"[Paso 2]\"]
-                        }
-                    }
-                ],
-                \"alternatives\": {
-                    \"desayuno\": {
-                        \"opcion\": \"[Nombre de la receta alternativa]\",
-                        \"details\": {
-                            \"description\": \"[Descripción breve de la receta]\",
-                            \"image_prompt\": \"[Descripción simple para el generador de imágenes]\",
-                            \"calories\": 0,
-                            \"prep_time_minutes\": 0,
-                            \"ingredients\": [
-                                {
-                                    \"item\": \"[Ingrediente 1]\",
-                                    \"quantity\": \"[Cantidad, e.g., 1 unidad, 500 g]\",
-                                    \"prices\": [
-                                        {\"store\": \"{$stores[0]}\", \"price\": 0, \"currency\": \"{$currency}\"},
-                                        {\"store\": \"{$stores[1]}\", \"price\": 0, \"currency\": \"{$currency}\"},
-                                        {\"store\": \"{$stores[2]}\", \"price\": 0, \"currency\": \"{$currency}\"}
-                                    ]
-                                }
-                            ],
-                            \"instructions\": [\"[Paso 1]\", \"[Paso 2]\"]
-                        }
-                    },
-                    \"almuerzo\": {
-                        \"opcion\": \"[Nombre de la receta alternativa]\",
-                        \"details\": {
-                            \"description\": \"[Descripción breve de la receta]\",
-                            \"image_prompt\": \"[Descripción simple para el generador de imágenes]\",
-                            \"calories\": 0,
-                            \"prep_time_minutes\": 0,
-                            \"ingredients\": [
-                                {
-                                    \"item\": \"[Ingrediente 1]\",
-                                    \"quantity\": \"[Cantidad, e.g., 1 unidad, 500 g]\",
-                                    \"prices\": [
-                                        {\"store\": \"{$stores[0]}\", \"price\": 0, \"currency\": \"{$currency}\"},
-                                        {\"store\": \"{$stores[1]}\", \"price\": 0, \"currency\": \"{$currency}\"},
-                                        {\"store\": \"{$stores[2]}\", \"price\": 0, \"currency\": \"{$currency}\"}
-                                    ]
-                                }
-                            ],
-                            \"instructions\": [\"[Paso 1]\", \"[Paso 2]\"]
-                        }
-                    },
-                    \"cena\": {
-                        \"opcion\": \"[Nombre de la receta alternativa]\",
-                        \"details\": {
-                            \"description\": \"[Descripción breve de la receta]\",
-                            \"image_prompt\": \"[Descripción simple para el generador de imágenes]\",
-                            \"calories\": 0,
-                            \"prep_time_minutes\": 0,
-                            \"ingredients\": [
-                                {
-                                    \"item\": \"[Ingrediente 1]\",
-                                    \"quantity\": \"[Cantidad, e.g., 1 unidad, 500 g]\",
-                                    \"prices\": [
-                                        {\"store\": \"{$stores[0]}\", \"price\": 0, \"currency\": \"{$currency}\"},
-                                        {\"store\": \"{$stores[1]}\", \"price\": 0, \"currency\": \"{$currency}\"},
-                                        {\"store\": \"{$stores[2]}\", \"price\": 0, \"currency\": \"{$currency}\"}
-                                    ]
-                                }
-                            ],
-                            \"instructions\": [\"[Paso 1]\", \"[Paso 2]\"]
-                        }
-                    },
-                    \"snacks\": {
-                        \"opcion\": \"[Nombre del snack alternativo]\",
-                        \"details\": {
-                            \"description\": \"[Descripción breve del snack]\",
-                            \"image_prompt\": \"[Descripción simple para el generador de imágenes]\",
-                            \"calories\": 0,
-                            \"prep_time_minutes\": 0,
-                            \"ingredients\": [
-                                {
-                                    \"item\": \"[Ingrediente 1]\",
-                                    \"quantity\": \"[Cantidad, e.g., 1 unidad, 500 g]\",
-                                    \"prices\": [
-                                        {\"store\": \"{$stores[0]}\", \"price\": 0, \"currency\": \"{$currency}\"},
-                                        {\"store\": \"{$stores[1]}\", \"price\": 0, \"currency\": \"{$currency}\"},
-                                        {\"store\": \"{$stores[2]}\", \"price\": 0, \"currency\": \"{$currency}\"}
-                                    ]
-                                }
-                            ],
-                            \"instructions\": [\"[Paso 1]\", \"[Paso 2]\"]
-                        }
-                    }
-                }
-            },
-            \"recomendaciones\": [
-                \"[Recomendación 1 personalizada]\",
-                \"[Recomendación 2 personalizada]\",
-                \"[Recomendación 3 personalizada]\",
-                \"[Recomendación 4 personalizada]\",
-                \"[Recomendación 5 personalizada]\"
-            ]
-        }";
-
         try {
-            $response = Http::withToken(env('OPENAI_API_KEY'))
-                ->timeout(120)
-                ->post('https://api.openai.com/v1/chat/completions', [
-                    'model' => 'gpt-4o',
-                    'messages' => [['role' => 'user', 'content' => $prompt]],
-                    'response_format' => ['type' => 'json_object'],
-                    'temperature' => 0.7,
-                ]);
-
-            if ($response->failed()) {
-                Log::error('Error en la respuesta de OpenAI', [
-                    'user_id' => $user->id,
-                    'status' => $response->status(),
-                    'body' => $response->body()
-                ]);
-                return response()->json(['message' => 'Error al contactar al servicio de IA.'], 502);
+            // --- PASO 1: GENERAR EL PLAN NUTRICIONAL BASE ---
+            Log::info('Paso 1: Generando plan nutricional', ['userId' => $user->id]);
+            $nutritionalPlan = $this->generateNutritionalPlan($profile, $user);
+            if ($nutritionalPlan === null) {
+                Log::warning('Plan nutricional no generado, usando plan de respaldo', ['userId' => $user->id]);
+                $paisUsuario = $profile->pais ?? 'Peru';
+                $currency = match ($paisUsuario) {
+                    'Peru' => 'PEN',
+                    'Mexico' => 'MXN',
+                    'Chile' => 'CLP',
+                    'Argentina' => 'ARS',
+                    default => 'USD'
+                };
+                $stores = match ($paisUsuario) {
+                    'Peru' => ['Plaza Vea', 'Tottus', 'Metro'],
+                    'Mexico' => ['Walmart', 'Soriana', 'Chedraui'],
+                    'Chile' => ['Jumbo', 'Lider', 'Santa Isabel'],
+                    'Argentina' => ['Coto', 'Carrefour', 'Dia'],
+                    default => ['Store 1', 'Store 2', 'Store 3']
+                };
+                $nutritionalPlan = $this->getBackupPlanData($stores, $currency);
             }
+            Log::info('Plan nutricional generado', ['nutritionalPlan' => $nutritionalPlan]);
 
-            $planContent = $response->json('choices.0.message.content');
-            $planData = json_decode($planContent, true);
+            // --- PASO 2: GENERAR RECETAS BASADAS EN EL PLAN ---
+            Log::info('Paso 2: Generando recetas', ['userId' => $user->id]);
+            $planWithRecipes = $this->generateRecipes($nutritionalPlan, $profile);
+            Log::info('Plan con recetas generado', ['planWithRecipes' => $planWithRecipes]);
 
-            Log::info('[PlanController] Estructura de planData: ', [
-                'meal_plan_keys' => array_keys($planData['meal_plan'] ?? []),
-                'has_alternatives' => isset($planData['meal_plan']['alternatives']) ? 'Sí' : 'No',
-                'alternatives_keys' => isset($planData['meal_plan']['alternatives']) ? array_keys($planData['meal_plan']['alternatives']) : []
-            ]);
-
-            if (json_last_error() !== JSON_ERROR_NONE || !isset($planData['meal_plan'])) {
-                Log::error('El JSON de OpenAI no es válido o no tiene la estructura esperada', [
-                    'user_id' => $user->id,
-                    'content' => $planContent,
-                    'json_error' => json_last_error_msg()
-                ]);
-                return response()->json(['message' => 'Respuesta inesperada del servicio de IA.'], 502);
-            }
-
-            MealPlan::where('user_id', $user->id)
-                ->where('is_active', true)
-                ->update(['is_active' => false]);
-
+            // --- GUARDADO FINAL ---
+            Log::info('Almacenando plan en la base de datos', ['userId' => $user->id]);
+            MealPlan::where('user_id', $user->id)->update(['is_active' => false]);
             $mealPlan = MealPlan::create([
                 'user_id' => $user->id,
-                'plan_data' => $planData,
+                'plan_data' => $planWithRecipes, // Guardamos el plan con recetas
                 'is_active' => true,
             ]);
 
-            Log::info('Nuevo plan alimenticio creado, despachando job de imágenes', [
-                'user_id' => $user->id,
-                'meal_plan_id' => $mealPlan->id
+            Log::info('Plan alimenticio generado y almacenado con éxito', ['userId' => $user->id, 'mealPlanId' => $mealPlan->id]);
+
+            return response()->json(['message' => 'Plan alimenticio generado con éxito.', 'data' => $mealPlan], 201);
+
+        } catch (\Exception $e) {
+            Log::error('Excepción crítica en generateAndStorePlan', [
+                'userId' => $user->id,
+                'exception' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json(['message' => 'Ocurrió un error interno fatal.'], 500);
+        }
+    }
+
+    /**
+     * PASO 1: Llama a la IA para generar un plan nutricional validado, con reintentos.
+     */
+    private function generateNutritionalPlan($profile, $user): ?array
+    {
+        $prompt = $this->buildNutritionalPrompt($profile);
+        $maxRetries = 3;
+
+        for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
+            Log::info("Intento de plan nutricional #{$attempt} para user_id: {$user->id}");
+            
+            $response = Http::withToken(env('OPENAI_API_KEY'))->timeout(120)->post('https://api.openai.com/v1/chat/completions', [
+                'model' => 'gpt-4o',
+                'messages' => [['role' => 'user', 'content' => $prompt]],
+                'response_format' => ['type' => 'json_object'],
+                'temperature' => 0.4,
+                'seed' => rand(1, 1000),
             ]);
 
-            $mealTypes = ['desayuno', 'almuerzo', 'cena', 'snacks', 'alternatives'];
-            foreach ($mealTypes as $type) {
-              
-                if ($type === 'alternatives') {
-                    Log::info("[PlanController] Verificando alternatives en meal_plan", [
-                        'alternatives_exists' => isset($planData['meal_plan']['alternatives']),
-                        'is_array' => is_array($planData['meal_plan']['alternatives'] ?? []),
-                        'alternatives_content' => $planData['meal_plan']['alternatives'] ?? 'No disponible'
-                    ]);
-                    if (isset($planData['meal_plan']['alternatives']) && is_array($planData['meal_plan']['alternatives']) && !empty($planData['meal_plan']['alternatives'])) {
-                        foreach ($planData['meal_plan']['alternatives'] as $altType => $altMeal) {
-                            if (isset($altMeal['opcion']) && isset($altMeal['details']['image_prompt'])) {
-                                Log::info("[PlanController] Despachando GenerateRecipeImage para alternativa: {$altType}, opcion: " . ($altMeal['opcion'] ?? 'Sin opción'));
-                                GenerateRecipeImage::dispatch($mealPlan->id, $altType, 0);
-                            } else {
-                                Log::warning("[PlanController] Alternativa inválida para {$altType}", [
-                                    'altMeal' => $altMeal
-                                ]);
+            if ($response->failed()) {
+                Log::error("Fallo en la llamada a la API para plan nutricional", ['status' => $response->status(), 'body' => $response->body()]);
+                continue;
+            }
+            $planData = json_decode($response->json('choices.0.message.content'), true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                Log::error("Error al decodificar JSON del plan nutricional", ['error' => json_last_error_msg()]);
+                continue;
+            }
+            
+            // Validación de calorías
+            $targetCalories = $planData['nutritionPlan']['targetMacros']['calories'] ?? 0;
+            $planCalories = 0;
+            if (isset($planData['nutritionPlan']['meals']) && is_array($planData['nutritionPlan']['meals'])) {
+                foreach ($planData['nutritionPlan']['meals'] as $meal) {
+                    if (is_array($meal)) {
+                        foreach ($meal as $category) {
+                            if (isset($category['options'][0]['calories'])) {
+                                $planCalories += $category['options'][0]['calories'];
                             }
                         }
-                    } else {
-                        Log::warning("[PlanController] No se encontró 'alternatives' en meal_plan, no es un array o está vacío");
                     }
                 }
             }
-
-            return response()->json([
-                'message' => 'Plan alimenticio generado con éxito. Las imágenes se están preparando.',
-                'data' => $mealPlan
-            ], 201);
-
-        } catch (\Exception $e) {
-            Log::error('Excepción en generateAndStorePlan', [
-                'user_id' => $user->id,
-                'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            return response()->json(['message' => 'Ocurrió un error interno al generar el plan.'], 500);
+            
+            if ($targetCalories > 0 && (abs($targetCalories - $planCalories) / $targetCalories) <= 0.12) {
+                Log::info("Plan nutricional aceptado en el intento #{$attempt}.", ['planData' => $planData]);
+                return $planData; // Devuelve el plan válido
+            }
+            
+            Log::warning("Intento nutricional #{$attempt} rechazado.", ['target' => $targetCalories, 'calculated' => $planCalories]);
         }
+        return null; // Devuelve null si todos los intentos fallan
+    }
+
+    /**
+     * PASO 2: Llama a la IA para generar recetas basadas en el plan.
+     */
+    private function generateRecipes(array $nutritionalPlan, $profile): array
+    {
+        $prompt = $this->buildRecipePrompt($nutritionalPlan);
+        Log::info("Iniciando generación de recetas para user_id: {$profile->user_id}", ['prompt' => $prompt]);
+
+        $response = Http::withToken(env('OPENAI_API_KEY'))->timeout(180)->post('https://api.openai.com/v1/chat/completions', [
+            'model' => 'gpt-4o',
+            'messages' => [['role' => 'user', 'content' => $prompt]],
+            'response_format' => ['type' => 'json_object'],
+            'temperature' => 0.6,
+        ]);
+
+        if ($response->successful()) {
+            $recipeData = json_decode($response->json('choices.0.message.content'), true);
+            Log::info('Respuesta de la API para recetas:', ['recipeData' => $recipeData]);
+            if (isset($recipeData['recipes']) && is_array($recipeData['recipes']) && count($recipeData['recipes']) === 9) {
+                $nutritionalPlan['recipes'] = $recipeData['recipes'];
+                Log::info("Recetas generadas y fusionadas exitosamente.", ['recipes' => $recipeData['recipes']]);
+                return $nutritionalPlan;
+            } else {
+                Log::error("La respuesta de la API no contiene un array 'recipes' válido o no tiene 9 recetas.", ['recipeData' => $recipeData]);
+            }
+        } else {
+            Log::error("Falló la llamada a la API para recetas.", ['status' => $response->status(), 'body' => $response->body()]);
+        }
+
+        Log::error("Falló la generación de recetas. Devolviendo plan sin recetas.", ['nutritionalPlan' => $nutritionalPlan]);
+        return $nutritionalPlan;
+    }
+
+    /**
+     * Construye el prompt para la generación de recetas.
+     */
+    private function buildRecipePrompt(array $plan): string
+    {
+        $planJson = json_encode($plan['nutritionPlan']['meals'], JSON_PRETTY_PRINT);
+        return "
+        Actúa como un chef creativo y nutricionista. Tu tarea es crear recetas inspiradoras basadas en el siguiente plan de comidas.
+
+        **PLAN DE COMIDAS BASE (Ingredientes disponibles):**
+        ```json
+        {$planJson}
+        ```
+
+        **INSTRUCCIONES:**
+        1. Crea exactamente 9 recetas: 3 para 'Desayuno', 3 para 'Almuerzo' y 3 para 'Cena'.
+        2. Cada receta debe usar una combinación lógica de los alimentos listados en el plan de comidas base.
+        3. El campo `planComponents` debe listar los nombres de los ingredientes del plan que se usan en la receta.
+        4. Calcula las calorías totales de la receta sumando las calorías de sus `planComponents`.
+        5. Cada receta debe seguir esta estructura:
+           ```json
+           {
+               \"mealType\": \"Desayuno|Almuerzo|Cena\",
+               \"name\": \"Nombre de la receta\",
+               \"planComponents\": [\"ingrediente1\", \"ingrediente2\", ...],
+               \"calories\": 123,
+               \"instructions\": \"Instrucciones detalladas para preparar la receta\"
+           }
+           ```
+        6. Devuelve únicamente un objeto JSON con una sola clave raíz: `\"recipes\"`, que contenga un array de 9 objetos de receta.
+        7. No incluyas ninguna otra información fuera del objeto JSON solicitado.
+
+        **Ejemplo de respuesta esperada:**
+        ```json
+        {
+            \"recipes\": [
+                {
+                    \"mealType\": \"Desayuno\",
+                    \"name\": \"Avena con Frutas\",
+                    \"planComponents\": [\"Avena con Proteína\", \"Frutas\"],
+                    \"calories\": 450,
+                    \"instructions\": \"Mezclar avena con agua, calentar y agregar frutas frescas.\"
+                },
+                {
+                    \"mealType\": \"Almuerzo\",
+                    \"name\": \"Ensalada de Pollo\",
+                    \"planComponents\": [\"Pechuga de Pollo\", \"Ensalada con Palta\"],
+                    \"calories\": 600,
+                    \"instructions\": \"Asar la pechuga de pollo y mezclar con ensalada de palta y vegetales.\"
+                },
+                ...
+            ]
+        }
+        ```
+        ";
+    }
+
+    /**
+     * Construye el prompt para el plan nutricional.
+     */
+    private function buildNutritionalPrompt($profile): string
+    {
+        return "
+        Actúa como un nutricionista de élite. Tu misión es crear un plan de nutrición en formato JSON, enfocado 100% en la precisión nutricional y calórica.
+
+        **REGLA MATEMÁTICA CRÍTICA:** La suma de las calorías de `options[0]` de cada categoría DEBE coincidir con el `targetMacros.calories` total. Esta es tu única prioridad.
+        **ESTRUCTURA:** Para cada categoría de comida, el array `options` debe contener 2-3 objetos como alternativas calóricamente equivalentes.
+
+        **Datos del Usuario:**
+        - Objetivo: {$profile->goal}, Edad: {$profile->age}, Sexo: {$profile->sex}, etc...
+
+        **EJEMPLO DE ESTRUCTURA:**
+        ```json
+        {
+            \"nutritionPlan\": {
+                \"targetMacros\": { \"calories\": 1900, \"protein\": 150, \"carbs\": 180, \"fats\": 65 },
+                \"meals\": {
+                    \"Desayuno\": [
+                        { \"title\": \"Carbohidratos y Proteína\", \"options\": [ { \"name\": \"Avena con Proteína\", \"calories\": 450, \"protein\": 35, \"carbs\": 55, \"fats\": 10, \"imageKeyword\": \"ingredient.oats\" } ] }
+                    ],
+                    \"Almuerzo\": [
+                        { \"title\": \"Proteína Principal\", \"options\": [ { \"name\": \"Pechuga de Pollo (200g)\", \"calories\": 400, \"protein\": 70, \"carbs\": 0, \"fats\": 12, \"imageKeyword\": \"ingredient.chicken_breast\" } ] },
+                        { \"title\": \"Carbohidratos\", \"options\": [ { \"name\": \"Arroz Blanco (200g)\", \"calories\": 260, \"protein\": 5, \"carbs\": 56, \"fats\": 1, \"imageKeyword\": \"ingredient.white_rice\" } ] },
+                        { \"title\": \"Grasas y Vegetales\", \"options\": [ { \"name\": \"Ensalada con Palta (100g)\", \"calories\": 200, \"protein\": 2, \"carbs\": 9, \"fats\": 18, \"imageKeyword\": \"ingredient.avocado\" } ] }
+                    ],
+                    \"Cena\": [
+                        { \"title\": \"Proteína Ligera\", \"options\": [ { \"name\": \"Filete de Pescado (220g)\", \"calories\": 350, \"protein\": 50, \"carbs\": 0, \"fats\": 15, \"imageKeyword\": \"ingredient.white_fish\" } ] },
+                        { \"title\": \"Carbohidratos Complejos\", \"options\": [ { \"name\": \"Quinoa (150g)\", \"calories\": 180, \"protein\": 6, \"carbs\": 32, \"fats\": 3, \"imageKeyword\": \"ingredient.quinoa\" } ] },
+                        { \"title\": \"Vegetales\", \"options\": [ { \"name\": \"Brócoli al Vapor (200g)\", \"calories\": 60, \"protein\": 5, \"carbs\": 12, \"fats\": 0, \"imageKeyword\": \"ingredient.broccoli\" } ] }
+                    ]
+                }
+            },
+            \"recipes\": []
+        }
+        ```
+        ";
     }
 
     public function getCurrentPlan(Request $request)
     {
-        $user = $request->user();
+        $user = $request->user()->load('profile');
+
+        $mealPlan = MealPlan::where('user_id', $user->id)
+            ->where('is_active', true)
+            ->latest('created_at')
+            ->first();
+
+        $processedPlanData = null;
+        if ($mealPlan) {
+            $processedPlanData = $mealPlan->plan_data;
+            $this->processPlanImages($processedPlanData);
+        }
+
+        return response()->json([
+            'message' => 'Datos de perfil y plan obtenidos con éxito.',
+            'data' => [
+                'user' => $user,
+                'profile' => $user->profile,
+                'active_plan' => $processedPlanData
+            ]
+        ], 200);
+    }
+
+    private function replaceKeywordsRecursive(array &$data, array $imagesMap, string $baseUrl, string $defaultImageUrl)
+    {
+        foreach ($data as $key => &$value) {
+            if (is_array($value)) {
+                $this->replaceKeywordsRecursive($value, $imagesMap, $baseUrl, $defaultImageUrl);
+            } elseif ($key === 'imageKeyword' && is_string($value)) {
+                $filePath = $imagesMap[$value] ?? null;
+                $data['imageUrl'] = $filePath ? $baseUrl . '/' . $filePath : $defaultImageUrl;
+                unset($data['imageKeyword']);
+            }
+        }
+    }
+
+    private function processPlanImages(array &$planData)
+    {
+        $keywords = [];
+        array_walk_recursive($planData, function ($value, $key) use (&$keywords) {
+            if ($key === 'imageKeyword') {
+                $keywords[] = $value;
+            }
+        });
+
+        if (empty($keywords)) return;
+
+        $baseUrl = asset('storage');
+        $imagesMap = FoodImage::whereIn('keyword', array_unique($keywords))
+            ->pluck('file_path', 'keyword')
+            ->all();
+        $defaultImageUrl = $baseUrl . '/ingredient_images/default.jpg';
         
-        $mealPlan = MealPlan::where('user_id', $user->id)
-            ->where('is_active', true)
-            ->latest('created_at')
-            ->first();
-
-        if (!$mealPlan) {
-            return response()->json(['message' => 'No se encontró un plan de alimentación activo.'], 404);
-        }
-
-        return response()->json([
-            'message' => 'Plan alimenticio obtenido con éxito',
-            'data' => $mealPlan->plan_data
-        ], 200);
-    }
-   
-    public function getIngredientsList(Request $request)
-    {
-        $user = $request->user();
-
-        $mealPlan = MealPlan::where('user_id', $user->id)
-            ->where('is_active', true)
-            ->latest('created_at')
-            ->first();
-
-        if (!$mealPlan) {
-            return response()->json(['message' => 'No se encontró un plan activo.'], 404);
-        }
-
-        $planData = $mealPlan->plan_data;
-        $allIngredients = [];
-
-        $mealTypes = ['desayuno', 'almuerzo', 'cena', 'snacks', 'alternatives'];
-        foreach ($mealTypes as $type) {
-            if ($type === 'alternatives' && isset($planData['meal_plan']['alternatives'])) {
-                foreach ($planData['meal_plan']['alternatives'] as $altMeal) {
-                    if (isset($altMeal['details']['ingredients']) && is_array($altMeal['details']['ingredients'])) {
-                        foreach ($altMeal['details']['ingredients'] as $ingredient) {
-                            if (isset($ingredient['item']) && isset($ingredient['quantity'])) {
-                                $allIngredients[] = trim($ingredient['item'] . ' (' . $ingredient['quantity'] . ')');
-                            }
-                        }
-                    }
-                }
-            } elseif (isset($planData['meal_plan'][$type]) && is_array($planData['meal_plan'][$type])) {
-                foreach ($planData['meal_plan'][$type] as $mealOption) {
-                    if (isset($mealOption['details']['ingredients']) && is_array($mealOption['details']['ingredients'])) {
-                        foreach ($mealOption['details']['ingredients'] as $ingredient) {
-                            if (isset($ingredient['item']) && isset($ingredient['quantity'])) {
-                                $allIngredients[] = trim($ingredient['item'] . ' (' . $ingredient['quantity'] . ')');
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        $uniqueIngredients = array_values(array_unique($allIngredients));
-        sort($uniqueIngredients);
-
-        return response()->json([
-            'message' => 'Lista de ingredientes obtenida con éxito',
-            'data' => $uniqueIngredients
-        ], 200);
-    }
-    
-    private function enrichPlanWithImages(array $planData): array
-    {
-        if (!isset($planData['meal_plan'])) {
-            return $planData;
-        }
-
-        foreach ($planData['meal_plan'] as $type => &$meals) {
-            if ($type === 'alternatives') {
-                foreach ($meals as &$altMeal) {
-                    if (isset($altMeal['details']['ingredients']) && is_array($altMeal['details']['ingredients'])) {
-                        foreach ($altMeal['details']['ingredients'] as &$ingredientData) {
-                            if (isset($ingredientData['item'])) {
-                                $itemName = trim($ingredientData['item']);
-                                $imageUrl = null;
-
-                                $dbIngredient = Ingredient::where('name', $itemName)->first();
-
-                                if ($dbIngredient && !empty($dbIngredient->image_url)) {
-                                    Log::info("Usando URL de ingrediente cacheada para: " . $itemName);
-                                    $imageUrl = $dbIngredient->image_url;
-                                } else {
-                                    Log::info("No hay URL cacheada para: " . $itemName . ". Buscando en Unsplash.");
-                                    $imageUrl = $this->fetchImageFromUnsplash($itemName);
-
-                                    if ($imageUrl) {
-                                        Ingredient::updateOrCreate(
-                                            ['name' => $itemName],
-                                            ['image_url' => $imageUrl]
-                                        );
-                                    }
-                                }
-                                
-                                $ingredientData['image_url'] = $imageUrl;
-                            }
-                        }
-                    }
-                }
-            } elseif (is_array($meals)) {
-                foreach ($meals as &$mealOption) {
-                    if (isset($mealOption['details']['ingredients']) && is_array($mealOption['details']['ingredients'])) {
-                        foreach ($mealOption['details']['ingredients'] as &$ingredientData) {
-                            if (isset($ingredientData['item'])) {
-                                $itemName = trim($ingredientData['item']);
-                                $imageUrl = null;
-
-                                $dbIngredient = Ingredient::where('name', $itemName)->first();
-
-                                if ($dbIngredient && !empty($dbIngredient->image_url)) {
-                                    Log::info("Usando URL de ingrediente cacheada para: " . $itemName);
-                                    $imageUrl = $dbIngredient->image_url;
-                                } else {
-                                    Log::info("No hay URL cacheada para: " . $itemName . ". Buscando en Unsplash.");
-                                    $imageUrl = $this->fetchImageFromUnsplash($itemName);
-
-                                    if ($imageUrl) {
-                                        Ingredient::updateOrCreate(
-                                            ['name' => $itemName],
-                                            ['image_url' => $imageUrl]
-                                        );
-                                    }
-                                }
-                                
-                                $ingredientData['image_url'] = $imageUrl;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        return $planData;
+        $this->replaceKeywordsRecursive($planData, $imagesMap, $baseUrl, $defaultImageUrl);
     }
 
-    private function fetchImageFromUnsplash(string $keyword): ?string
+    /**
+     * Devuelve el plan de ejemplo como un array PHP.
+     * Este es nuestro plan de respaldo 100% seguro.
+     */
+    private function getBackupPlanData(array $stores, string $currency): array
     {
-        $accessKey = 'qytRuzMnw8P3BSPJinKJ6QdkCVaL8bFFnMJKh4Qz7-w';
-
-        if (!$accessKey) {
-            return null;
+        $backupJson = "
+        {
+            \"nutritionPlan\": {
+                \"targetMacros\": { \"calories\": 1900, \"protein\": 150, \"carbs\": 180, \"fats\": 65 },
+                \"meals\": {
+                    \"Desayuno\": [
+                        {
+                            \"title\": \"Carbohidratos y Proteína\",
+                            \"options\": [
+                                { \"name\": \"Avena con Proteína en Polvo\", \"calories\": 450, \"protein\": 35, \"carbs\": 55, \"fats\": 10, \"imageKeyword\": \"ingredient.oats\" },
+                                { \"name\": \"Pan Integral con Huevos Revueltos\", \"calories\": 450, \"protein\": 28, \"carbs\": 48, \"fats\": 15, \"imageKeyword\": \"ingredient.whole_grain_bread\" }
+                            ]
+                        }
+                    ],
+                    \"Almuerzo\": [
+                        {
+                            \"title\": \"Proteína Principal\",
+                            \"options\": [
+                                { \"name\": \"Pechuga de Pollo (200g)\", \"calories\": 400, \"protein\": 70, \"carbs\": 0, \"fats\": 12, \"imageKeyword\": \"ingredient.chicken_breast\" }
+                            ]
+                        },
+                        {
+                            \"title\": \"Carbohidratos\",
+                            \"options\": [
+                                { \"name\": \"Arroz Blanco (200g)\", \"calories\": 260, \"protein\": 5, \"carbs\": 56, \"fats\": 1, \"imageKeyword\": \"ingredient.white_rice\" }
+                            ]
+                        },
+                        {
+                            \"title\": \"Grasas y Vegetales\",
+                            \"options\": [
+                                { \"name\": \"Ensalada con Palta (100g)\", \"calories\": 200, \"protein\": 2, \"carbs\": 9, \"fats\": 18, \"imageKeyword\": \"ingredient.avocado\" }
+                            ]
+                        }
+                    ],
+                    \"Cena\": [
+                        {
+                            \"title\": \"Proteína Ligera\",
+                            \"options\": [
+                                { \"name\": \"Filete de Pescado (220g)\", \"calories\": 350, \"protein\": 50, \"carbs\": 0, \"fats\": 15, \"imageKeyword\": \"ingredient.white_fish\" }
+                            ]
+                        },
+                        {
+                            \"title\": \"Carbohidratos Complejos\",
+                            \"options\": [
+                                { \"name\": \"Quinoa (150g)\", \"calories\": 180, \"protein\": 6, \"carbs\": 32, \"fats\": 3, \"imageKeyword\": \"ingredient.quinoa\" }
+                            ]
+                        },
+                        {
+                            \"title\": \"Vegetales\",
+                            \"options\": [
+                                { \"name\": \"Brócoli al Vapor (200g)\", \"calories\": 60, \"protein\": 5, \"carbs\": 12, \"fats\": 0, \"imageKeyword\": \"ingredient.broccoli\" }
+                            ]
+                        }
+                    ]
+                }
+            },
+            \"recipes\": []
         }
-
-        $translations = [
-            'yogur natural' => 'plain yogurt',
-            'carne de res' => 'beef',
-            'pechuga de pollo' => 'chicken breast',
-            'cebolla' => 'onion',
-            'tortillas de maíz' => 'corn tortillas',
-            'pollo' => 'chicken',
-            'huevos' => 'eggs',
-            'pan' => 'bread',
-            'queso' => 'cheese',
-            'lechuga' => 'lettuce',
-            'tomate' => 'tomato',
-            'aguacate' => 'avocado'
-        ];
-
-        $cleanKeyword = trim(preg_replace('/\([^)]*\)/', '', $keyword));
-        $searchTerm = $translations[strtolower($cleanKeyword)] ?? strtolower($cleanKeyword);
-
-        try {
-            $response = Http::withHeaders(['Authorization' => 'Client-ID ' . $accessKey])
-                ->get('https://api.unsplash.com/search/photos', [
-                    'query' => $searchTerm,
-                    'per_page' => 1,
-                    'orientation' => 'squarish'
-                ]);
-
-            if ($response->successful()) {
-                $results = $response->json('results');
-                return $results[0]['urls']['small'] ?? null;
-            } else {
-                return null;
-            }
-        } catch (\Exception $e) {
-            Log::error('Error al buscar en Unsplash', [
-                'keyword' => $keyword,
-                'error' => $e->getMessage()
-            ]);
-            return null;
-        }
+        ";
+        return json_decode($backupJson, true);
     }
 }
