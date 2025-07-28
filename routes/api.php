@@ -69,6 +69,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::post('/profile', [ProfileController::class, 'storeOrUpdate']);
     Route::get('/plan/current', [PlanController::class, 'getCurrentPlan']); // <--- NUEVA RUTA
+     Route::get('/plan/status', [PlanController::class, 'getPlanStatus']); // <-- AÑADE ESTA LÍNEA AQUÍ
 
     Route::post('/plan/generate', [PlanController::class, 'generateAndStorePlan']);
     Route::get('/recipes/{recipe}', [RecipeController::class, 'show']);

@@ -76,26 +76,18 @@ class LumorahAiService
             $personalData = "\n**Perfil del Usuario:**\n- **Objetivo**: " . ($this->userProfile->goal ?? 'bienestar general') . ".";
         }
 
-        if ($this->mealPlanData && is_array($this->mealPlanData)) {
-            $plan = $this->mealPlanData;
-            $dailyCalories = $plan['nutritionPlan']['targetMacros']['calories'] ?? 'no especificado';
+        if ($this->mealPlanData && isset($this->mealPlanData['nutritionPlan'])) {
+            $contextualPlanData = [
+                'targetMacros' => $this->mealPlanData['nutritionPlan']['targetMacros'] ?? [],
+                'meals' => $this->mealPlanData['nutritionPlan']['meals'] ?? []
+            ];
+    
+            // Convertimos el plan detallado a un string JSON formateado
+            $planJson = json_encode($contextualPlanData, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+    
+            $planSummary = "\n\n**Resumen del Plan Activo del Usuario (JSON con todos los detalles):**";
+            $planSummary .= "\n```json\n" . $planJson . "\n```";
             
-            // --- CONSTRUCCIÓN DEL CONTEXTO DETALLADO DEL PLAN ---
-            $planSummary = "\n\n**Resumen del Plan Activo del Usuario (¡DEBES USAR ESTOS DATOS!):**";
-            $planSummary .= "\n- **Objetivo Calórico Diario Total**: **{$dailyCalories} kcal**.";
-            
-            $planSummary .= "\n\n**Plan de Hoy:**";
-            foreach ($plan['nutritionPlan']['meals'] as $mealName => $components) {
-                $mealCalories = $this->calculateMealCalories($components);
-                $planSummary .= "\n- **{$mealName} ({$mealCalories} kcal):** ";
-                $ingredientNames = [];
-                foreach ($components as $component) {
-                    $ingredientNames[] = $component['options'][0]['name'] ?? 'ingrediente';
-                }
-                $planSummary .= implode(', ', $ingredientNames) . ".";
-            }
-            // --- FIN DE LA CONSTRUCCIÓN DEL CONTEXTO ---
-
             $personalData .= $planSummary;
         }
 
@@ -191,31 +183,35 @@ class LumorahAiService
 
   
 
-    private function buildSystemPrompt($userName)
-    {
-        $name = $userName ? ", $userName" : "";
-        $topicAndProfileInstructions = $this->getTopicInstructions();
-        
-        return <<<PROMPT
+   // Reemplaza toda esta función en LumorahAiService.php
+
+private function buildSystemPrompt($userName)
+{
+    $name = $userName ? ", $userName" : "";
+    $topicAndProfileInstructions = $this->getTopicInstructions();
+    
+    // --- CAMBIO: El prompt del sistema ahora es mucho más estricto ---
+    return <<<PROMPT
 # ROL Y OBJETIVO
-Eres Frutia, un coach nutricional con IA, amigable, experto y motivador. Tu objetivo principal es ayudar al usuario a seguir su plan de alimentación.
+Eres Frutia, un coach nutricional con IA, amigable, experto y motivador. Tu objetivo principal es ayudar al usuario a seguir su plan de alimentación con total precisión.
 
 # REGLAS DE RESPUESTA (OBLIGATORIAS)
-1.  **Personalización Total**: DEBES usar los datos del "Resumen del Plan Activo del Usuario" para dar respuestas específicas y numéricas. No uses frases condicionales como "si tu plan lo permite". **Afirma los hechos**: "Tu plan te asigna X calorías para la cena...". Si el usuario pregunta por un alimento, PRIMERO verifica si está en su "Plan de Hoy".
-2.  **Estructura Clara**:
+1.  **Experto del Plan Específico**: Tu conocimiento se limita EXCLUSIVAMENTE al JSON del 'Resumen del Plan Activo' que te proporciono. TODAS tus respuestas deben basarse en los datos numéricos de ese JSON (**calorías, proteína, carbohidratos, grasas**). **NUNCA uses tu conocimiento general o frases como "generalmente"**. Si el usuario pregunta por los macros de la 'Pechuga de Pollo', debes responder con los valores exactos de proteína y grasa que aparecen en el JSON del plan. Sé directo y afirmativo.
+2.  **Personalización Total**: DEBES usar los datos del "Resumen del Plan Activo del Usuario" para dar respuestas específicas. No uses frases condicionales como "podrías considerar". **Afirma los hechos**: "Tu plan indica...", "La porción asignada es...".
+3.  **Estructura Clara**:
     -   **Saludo Corto**: "¡Hola{$name}!"
     -   **Validación**: Reconoce su pregunta. "Entiendo que quieres saber sobre la quinoa."
-    -   **Respuesta Directa y Personalizada**: Proporciona la información solicitada, conectándola directamente con los datos del plan del usuario. Usa negritas (`**texto**`) para resaltar datos clave (calorías, cantidades).
+    -   **Respuesta Directa y Personalizada**: Proporciona la información solicitada, conectándola directamente con los datos del plan del usuario. Usa negritas (`**texto**`) para resaltar datos clave.
     -   **Cierre Positivo**: Termina con una frase de ánimo.
-3.  **No Prohibir, Guiar**: Nunca prohíbas una comida. Ofrece estrategias para que el usuario tome decisiones informadas.
-4.  **Ser Conciso**: Limita tus respuestas a 2-3 párrafos cortos.
+4.  **No Prohibir, Guiar**: Nunca prohíbas una comida. Ofrece estrategias para que el usuario tome decisiones informadas basadas en los datos de su plan.
+5.  **Ser Conciso**: Limita tus respuestas a 2-3 párrafos cortos.
 
 # CONTEXTO DE LA CONVERSACIÓN ACTUAL
 {$topicAndProfileInstructions}
 
 Ahora, responde a la última pregunta del usuario basándote en TODAS estas reglas.
 PROMPT;
-    }
+}
 
     
     private function buildSystemVoicePrompt($userName)
