@@ -13,6 +13,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\WebhookController;
 use App\Http\Controllers\IngredientController;
 use App\Http\Controllers\RecipeImageController;
+use App\Http\Controllers\AffiliateController;
 
  
 
@@ -24,6 +25,7 @@ Route::post('/google-login', [AuthController::class, 'googleLogin']);
  
  Route::post('/webhooks/mercadopago', [WebhookController::class, 'handleMercadoPago']);
 
+ Route::get('/plans', [PaymentController::class, 'getPlans']);
 
     
 // Rutas de Google
@@ -38,6 +40,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::post('/history/log', [MealLogController::class, 'store']); // Guardar una comida
     Route::get('/history', [MealLogController::class, 'index']);      // Obtener todo el historial
+    Route::post('/affiliates/validate-code', [AffiliateController::class, 'validateCode']);
 
 
     Route::get('/user/name', [AuthController::class, 'getUserName']);
@@ -58,6 +61,8 @@ Route::middleware('auth:sanctum')->group(function () {
         return response()->json(['message' => 'Perfil de usuario no encontrado.'], 404);
     });
 
+    
+ 
     
 
     Route::post('/payment/create-preference', [PaymentController::class, 'createPreference']);

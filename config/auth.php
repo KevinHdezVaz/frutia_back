@@ -30,7 +30,7 @@ return [
 
         'admins' => [ // Nuevo provider para administradores
             'driver' => 'eloquent',
-            'model' => App\Models\Administrator::class,
+            'model' => App\Models\Administrator::class, // <-- Asegúrate que la ruta completa esté aquí
         ],
     ],
 

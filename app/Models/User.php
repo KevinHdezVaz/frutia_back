@@ -23,11 +23,17 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'phone', // <-- Agrega esta línea
+
         'firebase_uid', // Añadido para Google Sign-In
         'trial_ends_at',
         'message_count', // <-- AÑADE ESTA LÍNEA
 
         'subscription_status',
+        'subscription_ends_at', // <-- AÑADE ESTA LÍNEA
+
+        'applied_affiliate_code', // <-- AÑADE ESTA LÍNEA
+
     ];
 
     /**
@@ -43,9 +49,10 @@ class User extends Authenticatable
      */
     protected $casts = [
         'email_verified_at' => 'datetime',
-        'password' => 'hashed', // Laravel 10+ se encarga del hash automáticamente
+        'password' => 'hashed',
+        'trial_ends_at' => 'datetime',      // <-- Asegúrate que esta línea exista
+        'subscription_ends_at' => 'datetime', // <-- AÑADE ESTA LÍNEA
     ];
-
     /**
      * Define la relación: un Usuario tiene un Perfil.
      */

@@ -1,6 +1,7 @@
 <?php
 
 namespace App\Http\Controllers;
+use App\Models\Affiliate; // <-- Añade esta línea al principio del archivo
 
 use Carbon\Carbon;
 use App\Models\User;
@@ -35,43 +36,49 @@ class AuthController extends Controller
  
 public function register(Request $request)
 {
-    // 1. Validar los datos básicos para el registro.
+    // 1. Validar los datos, haciendo el código de afiliado opcional.
     $validated = $request->validate([
         'name' => 'required|string|max:255',
         'email' => 'required|string|email|max:255|unique:users',
+        'phone' => 'nullable|string|max:20|unique:users',
         'password' => 'required|string|min:6',
+        'affiliate_code' => 'nullable|string|exists:affiliates,referral_code', // Valida que el código exista en la tabla affiliates
     ]);
 
     Log::info('Datos validados para registro:', $validated);
 
-    // 2. Hashear la contraseña por seguridad.
+    // 2. Hashear la contraseña.
     $validated['password'] = Hash::make($validated['password']);
     Log::info('Contraseña hasheada.');
 
-    // --- INICIA CAMBIO ---
-    // 3. Añadir los datos del período de prueba.
+    // 3. Añadir datos del período de prueba.
     $validated['trial_ends_at'] = Carbon::now()->addDays(5);
     $validated['subscription_status'] = 'trial';
+    
+    // ▼▼▼ INICIO DEL CAMBIO ▼▼▼
+    // 4. Guardar el código de afiliado que se usó (si existe).
+    if ($request->has('affiliate_code')) {
+        $validated['applied_affiliate_code'] = $request->affiliate_code;
+    }
+    // ▲▲▲ FIN DEL CAMBIO ▲▲▲
 
-    Log::info('Datos de prueba añadidos:', [
-        'trial_ends_at' => $validated['trial_ends_at'],
-        'subscription_status' => $validated['subscription_status'],
-    ]);
-    // --- TERMINA CAMBIO ---
+    Log::info('Datos de prueba y afiliado añadidos.');
 
-    // 4. Crear el usuario en la base de datos con todos los datos.
+    // 5. Crear el usuario en la base de datos.
     $user = User::create($validated);
+    $user->profile()->create();
+
     Log::info('Usuario creado:', ['id' => $user->id, 'email' => $user->email]);
 
-    // 5. Crear un token para que la app pueda iniciar sesión automáticamente.
+    // 6. Crear un token.
     $token = $user->createToken('auth_token')->plainTextToken;
-    Log::info('Token generado para el usuario.', ['token' => $token]);
+    Log::info('Token generado para el usuario.');
 
-    // 6. Devolver el usuario y el token a la app Flutter.
+    // 7. Devolver la respuesta.
     return response()->json([
         'user' => $user,
         'token' => $token,
-    ], 201); // 201: Created
+    ], 201);
 }
 
     /**
@@ -136,6 +143,8 @@ public function register(Request $request)
                         'auth_provider' => 'google',
                         'trial_ends_at' => Carbon::now()->addDays(5),
                         'subscription_status' => 'trial',
+                        'phone' => null, // <-- Puedes establecerlo como null inicialmente
+
                     ]
                 );
                 // --- TERMINA CAMBIO ---
