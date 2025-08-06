@@ -17,51 +17,43 @@ class PlanController extends Controller
     {
         $user = $request->user();
 
-        // Carga el perfil para asegurar que existe antes de encolar el job.
         if (!$user->load('profile')->profile) {
             return response()->json(['message' => 'El perfil del usuario no está completo para generar un plan.'], 400);
         }
 
-        // Despacha el job para que se ejecute en segundo plano.
         GenerateUserPlanJob::dispatch($user->id);
 
-        // Devuelve una respuesta inmediata al usuario.
         return response()->json([
             'message' => 'Hemos recibido tu solicitud. Tu plan se está generando y te notificaremos cuando esté listo.'
-        ], 202); // 202 Accepted
+        ], 202);
     }
-
-
-    public function getPlanStatus(Request $request)
-{
-    // Validamos que el frontend nos envíe el tiempo en que se solicitó la generación
-    $request->validate([
-        'generation_request_time' => 'required|integer'
-    ]);
-
-    $user = $request->user();
-    // Convertimos el timestamp de segundos (enviado por Flutter) a un objeto Carbon
-    $requestTime = Carbon::createFromTimestamp($request->query('generation_request_time'));
-
-    // Buscamos el plan activo más reciente del usuario
-    $latestPlan = MealPlan::where('user_id', $user->id)
-        ->where('is_active', true)
-        ->latest('created_at')
-        ->first();
-
-    // La "FLAG": ¿Existe un plan Y fue creado DESPUÉS de que lo pedimos?
-    if ($latestPlan && $latestPlan->created_at->isAfter($requestTime)) {
-        return response()->json(['status' => 'ready']);
-    }
-
-    // Si no, el plan todavía está pendiente
-    return response()->json(['status' => 'pending']);
-}
-
-
 
     /**
-     * Obtiene el plan de alimentación activo actual del usuario.
+     * Verifica si el plan de alimentación ya está listo.
+     */
+    public function getPlanStatus(Request $request)
+    {
+        $request->validate([
+            'generation_request_time' => 'required|integer'
+        ]);
+
+        $user = $request->user();
+        $requestTime = Carbon::createFromTimestamp($request->query('generation_request_time'));
+
+        $latestPlan = MealPlan::where('user_id', $user->id)
+            ->where('is_active', true)
+            ->latest('created_at')
+            ->first();
+
+        if ($latestPlan && $latestPlan->created_at->isAfter($requestTime)) {
+            return response()->json(['status' => 'ready']);
+        }
+
+        return response()->json(['status' => 'pending']);
+    }
+
+    /**
+     * Obtiene el plan activo del usuario y lo procesa para el frontend.
      */
     public function getCurrentPlan(Request $request)
     {
@@ -73,10 +65,9 @@ class PlanController extends Controller
             ->first();
 
         $processedPlanData = null;
-        if ($mealPlan) {
-            // Procesa las imágenes para el frontend.
-            $processedPlanData = $mealPlan->plan_data;
-            $this->processPlanImages($processedPlanData);
+        if ($mealPlan && !empty($mealPlan->plan_data)) {
+            // Aquí se procesa el plan para añadir las URLs de las imágenes
+            $processedPlanData = $this->processPlanForFrontend($mealPlan->plan_data);
         }
 
         return response()->json([
@@ -90,42 +81,30 @@ class PlanController extends Controller
     }
 
     /**
-     * Reemplaza los keywords de imagen con URLs completas para el frontend.
-     * Esta lógica pertenece aquí, ya que es para la presentación de datos.
+     * Procesa el array del plan para preparar las URLs de las imágenes para el frontend.
+     * Esta función unifica toda la lógica de imágenes.
+     *
+     * @param array $planData El array del plan original.
+     * @return array El array del plan procesado.
      */
-    private function processPlanImages(array &$planData)
+
+     private function processPlanForFrontend(array $planData): array
     {
-        $keywords = [];
-        array_walk_recursive($planData, function ($value, $key) use (&$keywords) {
-            if ($key === 'imageKeyword') {
-                $keywords[] = $value;
+        // Pasamos el array por referencia para modificarlo directamente.
+        array_walk_recursive($planData, function (&$value, $key) {
+            // Caso 1: Procesa las imágenes nuevas generadas por DALL-E
+            if ($key === 'image' && is_string($value) && !empty($value)) {
+                // Crea la URL completa y la asigna a la misma clave 'image'
+                $value = asset('storage/' . $value);
             }
+            // Puedes añadir más lógica aquí si fuera necesario para otros campos.
         });
 
-        if (empty($keywords)) return;
+        // Para hacerle la vida más fácil al frontend, renombramos la clave "image" a "imageUrl".
+        // Esta es una forma segura y eficiente de hacerlo en todo el JSON.
+        $jsonString = json_encode($planData);
+        $jsonString = str_replace('"image":', '"imageUrl":', $jsonString);
 
-        $baseUrl = asset('storage');
-        $imagesMap = FoodImage::whereIn('keyword', array_unique($keywords))
-            ->pluck('file_path', 'keyword')
-            ->all();
-        $defaultImageUrl = $baseUrl . '/ingredient_images/default.jpg';
-
-        $this->replaceKeywordsRecursive($planData, $imagesMap, $baseUrl, $defaultImageUrl);
-    }
-
-    /**
-     * Función recursiva auxiliar para reemplazar keywords de imágenes.
-     */
-    private function replaceKeywordsRecursive(array &$data, array $imagesMap, string $baseUrl, string $defaultImageUrl)
-    {
-        foreach ($data as $key => &$value) {
-            if (is_array($value)) {
-                $this->replaceKeywordsRecursive($value, $imagesMap, $baseUrl, $defaultImageUrl);
-            } elseif ($key === 'imageKeyword' && is_string($value)) {
-                $filePath = $imagesMap[$value] ?? null;
-                $data['imageUrl'] = $filePath ? $baseUrl . '/' . $filePath : $defaultImageUrl;
-                unset($data['imageKeyword']);
-            }
-        }
+        return json_decode($jsonString, true);
     }
 }

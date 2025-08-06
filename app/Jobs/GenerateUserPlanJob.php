@@ -7,6 +7,7 @@
     use Illuminate\Support\Facades\Log;
     use Illuminate\Support\Facades\Http;
     use App\Jobs\EnrichPlanWithPricesJob;
+    use App\Jobs\GenerateRecipeImagesJob;
     use Illuminate\Queue\SerializesModels;
     use Illuminate\Queue\InteractsWithQueue;
     use Illuminate\Contracts\Queue\ShouldQueue;
@@ -56,14 +57,21 @@
                     'user_id' => $user->id,
                     'plan_data' => $planWithRecipes,
                     'is_active' => true,
-                ]);
+                ]); 
 
-                // PASO 4: Despachar el job para enriquecer con precios
-                Log::info('Despachando job para enriquecer con precios.', ['mealPlanId' => $mealPlan->id]);
-                EnrichPlanWithPricesJob::dispatch($mealPlan->id);
+                  // PASO 4: Despachar los jobs de enriquecimiento
+            Log::info('Despachando job para enriquecer con precios.', ['mealPlanId' => $mealPlan->id]);
+            EnrichPlanWithPricesJob::dispatch($mealPlan->id);
 
-                Log::info('Plan base generado. El enriquecimiento de precios se ejecutará en segundo plano.', ['userId' => $user->id, 'mealPlanId' => $mealPlan->id]);
+            // ▼▼▼ NUEVO ▼▼▼
+            Log::info('Despachando job para generar imágenes.', ['mealPlanId' => $mealPlan->id]);
+            GenerateRecipeImagesJob::dispatch($mealPlan->id)->onQueue('images'); // Opcional: usar una cola específica para imágenes
+            // ▲▲▲ FIN NUEVO ▲▲▲
 
+            Log::info('Plan base generado. El enriquecimiento se ejecutará en segundo plano.', ['userId' => $user->id, 'mealPlanId' => $mealPlan->id]);
+
+
+ 
             } catch (\Exception $e) {
                 Log::error('Excepción crítica en GenerateUserPlanJob', [
                     'userId' => $this->userId, 'exception' => $e->getMessage()
@@ -204,6 +212,31 @@
             $dietStyle = strtolower($profile->dietary_style ?? 'omnívoro');
             $goal = strtolower($profile->goal ?? '');
         
+              // --- 2. Lógica para el Presupuesto ---
+    $rawBudget = $profile->budget ?? 'Medio'; // El texto completo que envía el front
+    $budgetLevel = 'medio'; // Valor por defecto
+
+    if (str_contains(strtolower($rawBudget), 'bajo')) {
+        $budgetLevel = 'bajo';
+    } elseif (str_contains(strtolower($rawBudget), 'alto')) {
+        $budgetLevel = 'alto';
+    }
+
+    $budgetInstruction = '';
+    switch ($budgetLevel) {
+        case 'bajo':
+            $budgetInstruction = "- **PRESUPUESTO BAJO:** Prioriza estrictamente: Proteínas (huevo entero, atún en lata, legumbres, muslos de pollo), Carbohidratos (arroz blanco, avena, papa, pasta), Grasas (aceite de oliva). **PROHIBIDO USAR: salmón, lomo de res, proteína en polvo, quesos caros, frutos secos exóticos, yogur griego.**";
+            break;
+        case 'alto':
+            $budgetInstruction = "- **PRESUPUESTO ALTO:** Puedes incluir libremente: Proteínas (salmón, lomo de res, proteína en polvo, pechuga de pollo), Carbohidratos (quinua, pan artesanal, batata, arroz blanco, camote), Grasas (aceite de aguacate, almendras, nueces de macadamia, aceite de oliva extra virgen, palta).";
+            break;
+        case 'medio':
+        default:
+            $budgetInstruction = "- **PRESUPUESTO MEDIO:** Usa una mezcla balanceada: Proteínas (pechuga de pollo, pescado blanco como tilapia, carne molida magra, yogur griego alto en proteínas), Carbohidratos (arroz blanco, pan integral, camote, papa), Grasas (aceite de oliva, maní/cacahuates, aguacate).";
+            break;
+    }
+
+
             // --- 2. Creación de Instrucciones Específicas ---
             $dietaryRestriction = '';
             if ($dietStyle === 'vegano') {
@@ -233,16 +266,20 @@
             Tu respuesta debe ser **ÚNICAMENTE el objeto JSON**, sin explicaciones.
         
             **REGLAS MAESTRAS (OBLIGATORIAS):**
-            1.  **SÉ EXTREMADAMENTE ESPECÍFICO Y USA ALIMENTOS BÁSICOS:** Nunca uses términos genéricos. Si sugieres 'cereal', debe ser 'copos de avena sin azúcar'. Usa únicamente alimentos comunes y accesibles para el país del usuario, evitando ingredientes gourmet o raros.
-            2.  **ESPECIFICA CRUDO O COCIDO:** Para alimentos que cambian de peso al cocinarse (avena, arroz, carne, etc.), DEBES especificar si el peso es en CRUDO/SECO o COCIDO. Ejemplo: `\"portion\": \"150g de pollo (peso en crudo)\"`.
-            3.  **EQUIVALENCIA NUTRICIONAL ESTRICTA:** Las 'options' intercambiables dentro de un mismo grupo DEBEN ser nutricionalmente casi idénticas (diferencia máx. 15 kcal y 3-4g de proteína). Tu principal tarea es ajustar la porción para lograr esta equivalencia.
-            4.  **USA LENGUAJE COMÚN:** Describe los alimentos con sus nombres más comunes en el país del usuario. En lugar de 'copos de avena sin azúcar', usa 'Avena tradicional (hojuelas)'. En lugar de 'filete de res magro', usa 'Bistec de res'.
-            5.  **AGRUPACIÓN SIMPLE:** Solo agrupa alimentos casi idénticos (ej. 'Pollo o Pavo'). No agrupes alimentos distintos como 'Papa o Lentejas' en la misma opción.
-            6.  Para cada comida, crea claves para los GRUPOS DE ALIMENTOS (`Proteínas`, `Carbohidratos`, `Grasas`, etc.) y dentro, un array `options`.
-            7.  Para vegetales, usa una clave `Vegetales` con una opción `Ensalada LIBRE`.
+             1.  **RECOMENDACIÓN PERSONALIZADA:** Al inicio del plan, DEBES añadir una clave 'recommendation' con un texto breve (4-5 líneas) y motivador, explicando por qué este plan es ideal para el usuario, mencionando su objetivo principal (ej. 'bajar grasa', 'aumentar músculo').
+            2.  **REGLA DE PRESUPUESTO CRÍTICA:** La selección de alimentos DEBE basarse ESTRICTAMENTE en el nivel de presupuesto del usuario. Usa los ejemplos proporcionados como tu guía principal. Si el presupuesto es 'bajo', no puedes incluir NINGÚN alimento de la categoría 'alto'.
+            3. **NÚMERO DE OPCIONES (MUY IMPORTANTE):** Para cada grupo (Proteínas, Carbohidratos, Grasas), DEBES proporcionar el siguiente número de opciones: TRES para Proteínas, TRES para Carbohidratos y DOS para Grasas.
+            4.  **SÉ EXTREMADAMENTE ESPECÍFICO Y USA ALIMENTOS BÁSICOS:** Nunca uses términos genéricos. Si sugieres 'cereal', debe ser 'copos de avena sin azúcar'. Usa únicamente alimentos comunes y accesibles para el país del usuario, evitando ingredientes gourmet o raros.
+            5.  **ESPECIFICA CRUDO O COCIDO:** Para alimentos que cambian de peso al cocinarse (avena, arroz, carne, etc.), DEBES especificar si el peso es en CRUDO/SECO o COCIDO. Ejemplo: `\"portion\": \"150g de pollo (peso en crudo)\"`.
+            6.  **EQUIVALENCIA NUTRICIONAL ESTRICTA:** Las 'options' intercambiables dentro de un mismo grupo DEBEN ser nutricionalmente casi idénticas (diferencia máx. 15 kcal y 3-4g de proteína). Tu principal tarea es ajustar la porción para lograr esta equivalencia.
+            7.  **USA LENGUAJE COMÚN:** Describe los alimentos con sus nombres más comunes en el país del usuario. En lugar de 'copos de avena sin azúcar', usa 'Avena tradicional (hojuelas)'. En lugar de 'filete de res magro', usa 'Bistec de res'.
+            8.  **AGRUPACIÓN SIMPLE:** Solo agrupa alimentos casi idénticos (ej. 'Pollo o Pavo'). No agrupes alimentos distintos como 'Papa o Lentejas' en la misma opción.
+            9.  Para cada comida, crea claves para los GRUPOS DE ALIMENTOS (`Proteínas`, `Carbohidratos`, `Grasas`, etc.) y dentro, un array `options`.
+            10.  Para vegetales, usa una clave `Vegetales` con una opción `Ensalada LIBRE`.
         
             **DATOS Y RESTRICCIONES DEL USUARIO:**
             - **País del Usuario:** {$userCountry}
+            - {$budgetInstruction} 
             - {$goalInstruction}
             - {$dietaryRestriction}
             - {$mealCountInstruction}
@@ -254,6 +291,7 @@
             ```json
             {
               \"nutritionPlan\": {
+            \"recommendation\": \"Este plan está diseñado para ayudarte a bajar grasa de forma sostenible. Nos enfocamos en comidas altas en proteína para mantenerte satisfecho y con energía, respetando tu presupuesto medio.etc\",
                 \"targetMacros\": { \"calories\": 2200, \"protein\": 180, \"fats\": 70, \"carbohydrates\": 210 },
                 \"meals\": {
                   \"Almuerzo\": {

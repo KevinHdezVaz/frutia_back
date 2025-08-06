@@ -20,15 +20,19 @@ class Kernel extends ConsoleKernel
 
     protected function schedule(Schedule $schedule): void
     {   
-        // $schedule->command('inspire')->hourly();
-       // $schedule->command('notifications:process')->everyMinute();
-       $schedule->command('notifications:streak-check')
-       ->dailyAt('12:00') // Ejecutar cada día a las 8 PM
-       ->timezone(config('app.timezone')) // Asegura que use la zona horaria de la app
-       ->withoutOverlapping() // Evita que se solape con ejecuciones anteriores
-       ->sendOutputTo(storage_path('logs/streak-notifications.log')); // Para depuración
-
-        $schedule->command('queue:work --stop-when-empty')->everyMinute();
+       
+            // ▼▼▼ ESTA ES LA ÚNICA LÍNEA QUE NECESITAS PARA EL WORKER ▼▼▼
+            $schedule->command('queue:work --queue=images,default --stop-when-empty')->everyMinute();
+    
+            // ... (resto de tus tareas programadas)
+            $schedule->command('notifications:streak-check')
+                ->dailyAt('12:00')
+                ->timezone(config('app.timezone'))
+                ->withoutOverlapping()
+                ->sendOutputTo(storage_path('logs/streak-notifications.log'));
+    
+            // LA LÍNEA ANTIGUA DEBE SER ELIMINADA
+    
 
     }
 
