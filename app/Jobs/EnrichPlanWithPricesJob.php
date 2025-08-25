@@ -66,7 +66,7 @@ class EnrichPlanWithPricesJob implements ShouldQueue
         $country = $profile->pais ?? 'Mexico';
     
         $stores = match ($country) {
-            'Peru' => ['Plaza Vea', 'Tottus', 'Metro'],
+            'Peru' => ['Plaza Vea', 'Tottus', 'Wong'],
             'Argentina' => ['Coto', 'Carrefour', 'Dia'],
             'Chile' => ['Jumbo', 'Lider', 'Santa Isabel'],
             'Mexico' => ['Walmart', 'Soriana', 'Chedraui'],
@@ -105,12 +105,18 @@ class EnrichPlanWithPricesJob implements ShouldQueue
         foreach ($planData['nutritionPlan']['meals'] as &$meal) {
             if (isset($meal['components'])) {
                 foreach ($meal['components'] as &$category) {
-                    foreach ($category['options'] as &$option) {
-                        $optionName = trim(preg_replace('/\s*\(.*?\)/', '', $option['name']));
-                        foreach ($pricesMap as $priceKey => $priceValue) {
-                            if (stripos($optionName, $priceKey) !== false || stripos($priceKey, $optionName) !== false) {
-                                $option['prices'] = $priceValue['prices'];
-                                break;
+                    // --- CORRECCIÓN 1: Verificar si la categoría es un array con opciones ---
+                    // Esto evita el error cuando un componente es un string (ej: "Vegetales": "Ensalada LIBRE")
+                    if (is_array($category) && isset($category['options'])) {
+                        foreach ($category['options'] as &$option) {
+                            $optionName = trim(preg_replace('/\s*\(.*?\)/', '', $option['name']));
+                            foreach ($pricesMap as $priceKey => $priceValue) {
+                                if (stripos($optionName, $priceKey) !== false || stripos($priceKey, $optionName) !== false) {
+                                    if (is_array($priceValue) && isset($priceValue['prices'])) {
+                                        $option['prices'] = $priceValue['prices'];
+                                    }
+                                    break;
+                                }
                             }
                         }
                     }
@@ -129,13 +135,12 @@ class EnrichPlanWithPricesJob implements ShouldQueue
         }
     
         foreach ($planData['nutritionPlan']['meals'] as $meal) {
-            // 1. Extrae ingredientes de los componentes principales (opciones)
             if (isset($meal['components']) && is_array($meal['components'])) {
                 foreach ($meal['components'] as $category) {
-                    if (isset($category['options']) && is_array($category['options'])) {
+                    // --- CORRECCIÓN 2: Aplicar la misma verificación aquí ---
+                    if (is_array($category) && isset($category['options']) && is_array($category['options'])) {
                         foreach ($category['options'] as $option) {
                             if (isset($option['name'])) {
-                                // Limpiamos el nombre para obtener el ingrediente principal
                                 $cleanName = preg_replace('/\s*\(.*?\)/', '', $option['name']);
                                 $keywords = preg_split('/ con | y | a la /', $cleanName);
                                 foreach ($keywords as $keyword) {
@@ -147,12 +152,10 @@ class EnrichPlanWithPricesJob implements ShouldQueue
                 }
             }
     
-            // 2. Extrae ingredientes de las recetas sugeridas (extendedIngredients)
             if (isset($meal['suggested_recipes']) && is_array($meal['suggested_recipes'])) {
                 foreach ($meal['suggested_recipes'] as $recipe) {
                     if (isset($recipe['extendedIngredients']) && is_array($recipe['extendedIngredients'])) {
                         foreach ($recipe['extendedIngredients'] as $ingredient) {
-                            // Usamos 'name' que es más limpio que 'original'
                             if (isset($ingredient['name'])) {
                                  $ingredients[] = trim($ingredient['name']);
                             }
@@ -162,7 +165,6 @@ class EnrichPlanWithPricesJob implements ShouldQueue
             }
         }
         
-        // Devolvemos una lista limpia sin duplicados
         return array_values(array_unique($ingredients));
     }
 }

@@ -23,7 +23,8 @@ class ProfileController extends Controller
             'age' => 'nullable|integer',
             'sex' => 'nullable|string|max:255',
             'goal' => 'nullable|string|max:255',
-            'activity_level' => 'nullable|string|max:255',
+            'activity_level' => 'nullable|string|max:255', // Podrías mantenerlo o eliminarlo si ya no se usa
+            'weekly_activity' => 'nullable|string|max:255', // Agrega esta línea
             'sport' => 'nullable|array',
             'training_frequency' => 'nullable|string|max:255',
             'meal_count' => 'nullable|string|max:255',

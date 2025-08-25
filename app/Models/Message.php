@@ -12,11 +12,11 @@ class Message extends Model
         'chat_session_id',
         'user_id',
         'text',
+        'image_url', // <-- AÑADE ESTA LÍNEA
         'is_user',
-         'created_at',
-        'updated_at',
+        'created_at',
+        'updated_at'
     ];
-
     protected $visible = [
         'id',
         'chat_session_id',

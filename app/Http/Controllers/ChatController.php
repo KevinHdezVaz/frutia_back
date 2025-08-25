@@ -191,75 +191,96 @@ class ChatController extends Controller
         }
     }
 
-    public function saveChatSession(Request $request)
-    {
-        $request->validate([
-            'title' => 'required|string|max:100',
-            'messages' => 'required|array',
-            'messages.*.text' => 'required|string',
-            'messages.*.is_user' => 'required|boolean',
-            'messages.*.created_at' => 'required|date',
-            'session_id' => 'nullable|exists:chat_sessions,id',
-        ]);
+   
+public function saveChatSession(Request $request)
+{
+    // ▼▼▼ 1. CORREGIR LA VALIDACIÓN ▼▼▼
+    $request->validate([
+        'title' => 'required|string|max:100',
+        'messages' => 'required|array',
+        'messages.*.text' => 'nullable|string', // <-- El texto ahora es opcional
+        'messages.*.image_url' => 'nullable|string|url', // <-- Nuevo campo para la imagen (opcional)
+        'messages.*.is_user' => 'required|boolean',
+        // 'messages.*.created_at' ya no es necesario si lo manejamos aquí
+        'session_id' => 'nullable|exists:chat_sessions,id',
+    ]);
 
-        DB::beginTransaction();
-        try {
-            $userId = Auth::id();
-            $sessionId = $request->session_id;
+    DB::beginTransaction();
+    try {
+        $userId = Auth::id();
+        $sessionId = $request->session_id;
 
-            if ($sessionId) {
-                $session = ChatSession::where('id', $sessionId)
-                    ->where('user_id', $userId)
-                    ->firstOrFail();
-                $session->update([
-                    'title' => $request->title,
-                    'is_saved' => true,
-                ]);
-            } else {
-                $session = ChatSession::create([
-                    'user_id' => $userId,
-                    'title' => $request->title,
-                    'is_saved' => true,
-                ]);
-            }
-
-            if ($sessionId) {
-                Message::where('chat_session_id', $sessionId)->delete();
-            }
-
-            foreach ($request->messages as $msg) {
-                Message::create([
-                    'chat_session_id' => $session->id,
-                    'user_id' => $msg['is_user'] ? $userId : null,
-                    'text' => $msg['text'],
-                    'is_user' => $msg['is_user'],
-                    'created_at' => $msg['created_at'],
-                    'updated_at' => $msg['created_at'],
-                ]);
-            }
-
-            DB::commit();
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'id' => $session->id,
-                    'user_id' => $session->user_id,
-                    'title' => $session->title,
-                    'is_saved' => $session->is_saved,
-                    'created_at' => $session->created_at->toDateTimeString(),
-                    'updated_at' => $session->updated_at->toDateTimeString(),
-                ],
-            ], 201);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Error al guardar sesión: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'error' => 'Error al guardar el chat',
-                'message' => $e->getMessage(),
-            ], 500);
+        if ($sessionId) {
+            $session = ChatSession::where('id', $sessionId)
+                ->where('user_id', $userId)
+                ->firstOrFail();
+            $session->update([
+                'title' => $request->title,
+                'is_saved' => true,
+            ]);
+        } else {
+            $session = ChatSession::create([
+                'user_id' => $userId,
+                'title' => $request->title,
+                'is_saved' => true,
+            ]);
         }
+
+        // Borramos los mensajes antiguos para resincronizar el chat completo
+        if ($sessionId) {
+            Message::where('chat_session_id', $session->id)->delete();
+        }
+
+        // ▼▼▼ 2. CORREGIR LA LÓGICA DE GUARDADO ▼▼▼
+        foreach ($request->messages as $msg) {
+            // Asegurarse de que al menos uno de los dos (texto o imagen) exista
+            if (empty($msg['text']) && empty($msg['image_url'])) {
+                continue; // Saltar mensajes vacíos
+            }
+
+            Message::create([
+                'chat_session_id' => $session->id,
+                'user_id' => $msg['is_user'] ? $userId : null,
+                'text' => $msg['text'],
+                'image_url' => $msg['image_url'] ?? null, // <-- Guardamos la URL de la imagen
+                'is_user' => $msg['is_user'],
+            ]);
+        }
+
+        DB::commit();
+        return response()->json([
+            'success' => true,
+            'data' => $session->fresh(), // Devolvemos la sesión actualizada
+        ], 201);
+    } catch (\Exception $e) {
+        DB::rollBack();
+        Log::error('Error al guardar sesión: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'error' => 'Error al guardar el chat',
+            'message' => $e->getMessage(),
+        ], 500);
     }
+}
+
+// ▼▼▼ AÑADE ESTA FUNCIÓN COMPLETA A TU CHATCONTROLLER.PHP ▼▼▼
+public function uploadImage(Request $request)
+{
+    $request->validate([
+        'image' => 'required|image|mimes:jpeg,png,jpg,gif|max:2048', // Valida que sea una imagen
+    ]);
+
+    // Guarda la imagen en 'storage/app/public/chat_images' y devuelve la ruta
+    $path = $request->file('image')->store('chat_images', 'public');
+
+    // Devuelve la URL completa y pública del archivo
+    return response()->json([
+        'success' => true,
+        'url' => asset('storage/' . $path)
+    ]);
+}
+// ▲▲▲ FIN DE LA FUNCIÓN A AÑADIR ▲▲▲
+
 
     public function getSessionMessages($sessionId)
     {
@@ -277,6 +298,8 @@ class ChatController extends Controller
                         'chat_session_id' => $msg->chat_session_id,
                         'user_id' => $msg->user_id,
                         'text' => $msg->text,
+                        'image_url' => $msg->image_url, // <-- AÑADE ESTA LÍNEA
+
                         'is_user' => $msg->is_user,
                         'created_at' => $msg->created_at->toDateTimeString(),
                         'updated_at' => $msg->updated_at->toDateTimeString(),
