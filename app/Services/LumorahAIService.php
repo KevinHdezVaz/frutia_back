@@ -52,63 +52,98 @@ class LumorahAiService
     {
         return [
             'body_analysis_inquiry' => ['% de grasa', 'porcentaje de grasa', 'analizar foto', 'estimar grasa', 'analizar cuerpo'],
-
-            'food_inquiry' => ['puedo comer', 'cuantas calorias tiene', 'es bueno comer', 'que pasa si como', 'makis', 'pizza', 'hamburguesa', 'tacos', 'sushi', 'helado', 'cerveza', 'vino', 'quinoa'],
+            'body_knowledge' => ['órgano más grande', 'qué órgano', 'músculo más grande', 'hueso más largo', 'anatomía', 'sistema digestivo', 'metabolismo', 'hormonas'],
+            'plan_specific' => ['mi plan', 'mis macros', 'mis calorías', 'puedo comer', 'cuanto debo comer', 'mi desayuno', 'mi almuerzo', 'mi cena', 'estoy en plan', 'mi objetivo'],
+            'nutrition_coaching' => ['no tengo hambre', 'tengo antojos', 'me siento mal', 'estoy cansado', 'no bajo peso', 'tengo dudas', 'cómo cocinar', 'meal prep'],
+            'food_inquiry' => ['cuantas calorias tiene', 'es bueno comer', 'que pasa si como', 'makis', 'pizza', 'hamburguesa'],
             'weight_loss' => ['perder peso', 'bajar de peso', 'adelgazar', 'bajar kilos', 'quemar grasa'],
             'muscle_gain' => ['aumentar músculo', 'ganar masa muscular', 'crecer', 'proteína para', 'gym'],
         ];
     }
 
     private function getTopicInstructions()
-    {
-        $instructions = [
-            // --- INSTRUCCIÓN MEJORADA ---
-            'body_analysis_inquiry' => "El usuario está preguntando si puedes analizar su porcentaje de grasa a partir de una foto. Tu respuesta DEBE ser afirmativa y útil. Anímale a usar la función de análisis de imagen que tiene la app. Explícale brevemente que para obtener el mejor resultado, la foto debe tener buena iluminación, mostrar claramente el torso y ser de frente.
-            Ejemplo de respuesta: '¡Claro que sí! Puedo darte una estimación de tu porcentaje de grasa corporal a partir de una foto. Para que el análisis sea lo más preciso posible, asegúrate de subir una foto con buena iluminación, de frente, y donde se vea bien tu torso. ¡Cuando estés listo, usa el botón de adjuntar imagen!'",
-         
-            'food_inquiry' => "El usuario pregunta sobre una comida. Tu proceso DEBE ser:
-            1.  **VERIFICAR**: Revisa la lista 'Plan de Hoy' que te proporciono. ¿El alimento que menciona el usuario (ej. quinoa, pollo, etc.) está en esa lista?
-            2.  **RESPONDER (SI ESTÁ EN EL PLAN)**: Si el alimento está en el plan, tu respuesta DEBE ser afirmativa y específica. Ejemplo: '¡Claro! La quinoa ya es parte de tu cena de hoy. El plan indica una porción de **150g (que son unas 180 kcal)**, lo cual es perfecto para tu cena de **590 kcal**. ¡Asegúrate de disfrutarla con el resto de tus ingredientes!'
-            3.  **RESPONDER (SI NO ESTÁ EN EL PLAN)**: Si el alimento no está en el plan, estima sus calorías y compáralas con el presupuesto de la comida más cercana (almuerzo/cena). Ejemplo: 'Los makis no están en tu plan de hoy, pero puedes integrarlos. 8 piezas tienen unas 400 kcal. Como tu cena tiene un presupuesto de **590 kcal**, podrías comerlos en lugar de tu cena planeada. ¡Solo ten cuidado con las salsas!'",
-
-'general' => "El usuario está haciendo una pregunta de conocimiento general sobre salud, bienestar o el cuerpo. Responde la pregunta de forma directa y concisa. Luego, si es posible, conecta la respuesta con la importancia de una buena nutrición o el plan del usuario. Ejemplo: Si pregunta por el órgano más grande, responde que es la piel y añade que cuidarla también implica una buena alimentación e hidratación.",            // ... otras instrucciones
-        ];
-
-        $baseInstruction = $instructions[$this->detectedTopic] ?? $instructions['general'];
-        $personalData = '';
-
-        if ($this->userProfile) {
-            $personalData = "\n**Perfil del Usuario:**\n- **Objetivo**: " . ($this->userProfile->goal ?? 'bienestar general') . ".";
-        }
-
-        if ($this->mealPlanData && isset($this->mealPlanData['nutritionPlan'])) {
-            $contextualPlanData = [
-                'targetMacros' => $this->mealPlanData['nutritionPlan']['targetMacros'] ?? [],
-                'meals' => $this->mealPlanData['nutritionPlan']['meals'] ?? []
-            ];
+{
+    $instructions = [
+        'body_knowledge' => "El usuario pregunta sobre anatomía o fisiología. Responde de forma precisa y educativa. Ejemplo: 'La piel es el órgano más grande del cuerpo, representando el 16% del peso corporal total. Su salud depende mucho de una buena nutrición e hidratación, como la que estás siguiendo en tu plan.'",
+        
+        'plan_specific' => "El usuario pregunta específicamente sobre SU PLAN. Actúa como su coach personal. Usa los datos exactos del JSON del plan. Sé específico, usa negritas para destacar números importantes y conecta todo con su objetivo personal. Ejemplo: 'Según tu plan, tienes **2,158 calorías objetivo** distribuidas en **288g proteína, 96g grasas y 36g carbohidratos**. Para tu objetivo de **bajar grasa**, esta distribución es perfecta porque...'",
+        
+        'nutrition_coaching' => "El usuario necesita coaching nutricional real. Actúa como su entrenador personal. Ofrece soluciones prácticas basadas en su plan y perfil. Sé empático pero firme. Ejemplo: 'Entiendo que tengas antojos, es completamente normal. Tu plan de **2,158 calorías** está diseñado para que no pases hambre. ¿Qué tal si...'",
+        
+        'body_analysis_inquiry' => "El usuario quiere análisis de imagen corporal. Confirma que sí puedes hacerlo y explica cómo obtener mejores resultados: 'ß¡Por supuesto! Puedo estimar tu porcentaje de grasa corporal. Para el mejor análisis, usa una foto con buena iluminación, de frente, y donde se vea claramente tu torso. ¡Usa el botón de imagen cuando estés listo!'",
+        
+        'food_inquiry' => "PROCESO OBLIGATORIO:
+        1. **SI EL ALIMENTO ESTÁ EN SU PLAN**: Confirma y da detalles específicos: '¡Perfecto! El pollo ya está en tu plan. Para el almuerzo puedes comer **120g (peso crudo)** que son **280 calorías** con **40g de proteína**.'
+        2. **SI NO ESTÁ EN SU PLAN**: Calcula calorías y sugiere cómo integrarlo: 'Los makis no están en tu plan, pero 8 piezas (≈400 kcal) podrían reemplazar tu cena de **590 kcal**. Solo ajusta el resto de ingredientes.'",
+        
+        'general' => "Pregunta general sobre salud/nutrición. Responde con conocimiento experto y conecta con su plan si es posible."
+    ];
     
-            // Convertimos el plan detallado a un string JSON formateado
-            $planJson = json_encode($contextualPlanData, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+    $baseInstruction = $instructions[$this->detectedTopic] ?? $instructions['general'];
     
-            $planSummary = "\n\n**Resumen del Plan Activo del Usuario (JSON con todos los detalles):**";
-            $planSummary .= "\n```json\n" . $planJson . "\n```";
-            
-            $personalData .= $planSummary;
-        }
+    // Agregar contexto del usuario
+    $personalContext = $this->buildPersonalContext();
+    
+    return $baseInstruction . $personalContext;
+}
 
-        return $baseInstruction . ($personalData ? "\n\n" . $personalData : "");
+private function buildPersonalContext()
+{
+    $context = '';
+    
+    if ($this->userProfile) {
+        $context .= "\n\n**PERFIL DEL USUARIO:**";
+        $context .= "\n- **Nombre**: " . $this->userName;
+        $context .= "\n- **Objetivo**: " . ($this->userProfile->goal ?? 'bienestar general');
+        $context .= "\n- **Edad**: " . ($this->userProfile->age ?? 'no especificada');
+        $context .= "\n- **Dificultades**: " . (is_array($this->userProfile->diet_difficulties) ? implode(', ', $this->userProfile->diet_difficulties) : $this->userProfile->diet_difficulties ?? 'ninguna');
     }
-
-    private function calculateMealCalories(array $mealComponents): int
-    {
-        $totalCalories = 0;
-        foreach ($mealComponents as $component) {
-            if (isset($component['options'][0]['calories'])) {
-                $totalCalories += (int)$component['options'][0]['calories'];
+    
+    if ($this->mealPlanData && isset($this->mealPlanData['nutritionPlan'])) {
+        $nutrition = $this->mealPlanData['nutritionPlan'];
+        $context .= "\n\n**PLAN ACTIVO DEL USUARIO:**";
+        $context .= "\n- **Calorías objetivo**: " . ($nutrition['targetMacros']['calories'] ?? 'no definidas') . " kcal";
+        $context .= "\n- **Proteína**: " . ($nutrition['targetMacros']['protein'] ?? 0) . "g";
+        $context .= "\n- **Grasas**: " . ($nutrition['targetMacros']['fats'] ?? 0) . "g";  
+        $context .= "\n- **Carbohidratos**: " . ($nutrition['targetMacros']['carbohydrates'] ?? 0) . "g";
+        
+        if (isset($nutrition['meals'])) {
+            $context .= "\n\n**COMIDAS DE HOY:**";
+            foreach ($nutrition['meals'] as $mealName => $meal) {
+                $context .= "\n- **$mealName**: ";
+                $mealCalories = $this->calculateMealCalories($meal);
+                $context .= $mealCalories > 0 ? "$mealCalories kcal aprox." : "ver detalles en JSON";
             }
         }
-        return $totalCalories;
+        
+        // Agregar JSON completo para consultas específicas
+        $context .= "\n\n**JSON COMPLETO DEL PLAN (para consultas específicas):**";
+        $context .= "\n```json\n" . json_encode($this->mealPlanData['nutritionPlan'], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n```";
     }
+    
+    return $context;
+}
+
+private function calculateMealCalories(array $meal): int
+{
+    $totalCalories = 0;
+    
+    // Buscar en la estructura correcta
+    if (isset($meal['Proteínas']['options'][0]['calories'])) {
+        $totalCalories += (int)$meal['Proteínas']['options'][0]['calories'];
+    }
+    if (isset($meal['Carbohidratos']['options'][0]['calories'])) {
+        $totalCalories += (int)$meal['Carbohidratos']['options'][0]['calories'];  
+    }
+    if (isset($meal['Grasas']['options'][0]['calories'])) {
+        $totalCalories += (int)$meal['Grasas']['options'][0]['calories'];
+    }
+    if (isset($meal['Vegetales']['options'][0]['calories'])) {
+        $totalCalories += (int)$meal['Vegetales']['options'][0]['calories'];
+    }
+    
+    return $totalCalories;
+}
  
     private function containsAny($text, $keywords)
     {
@@ -269,27 +304,47 @@ private function buildSystemPrompt($userName)
     $name = $userName ? ", $userName" : "";
     $topicAndProfileInstructions = $this->getTopicInstructions();
     
-    // --- CAMBIO: El prompt del sistema ahora es más flexible e inteligente ---
     return <<<PROMPT
-# ROL Y OBJETIVO
-Eres Frutia, un coach nutricional con IA, amigable, experto y motivador. Tu objetivo principal es ayudar al usuario a alcanzar sus metas de bienestar, usando su plan de alimentación como la herramienta central.
+# ERES FRUTIA - COACH NUTRICIONAL PERSONAL DE{$name}
 
-# REGLAS DE RESPUESTA (OBLIGATORIAS)
-1.  **PRIORIDAD MÁXIMA AL PLAN**: Tu base de conocimiento principal es el JSON del 'Resumen del Plan Activo'. Si la pregunta del usuario se puede responder con datos de este JSON (calorías, comidas, macros), DEBES usar esos datos de forma precisa y directa.
-2.  **USA TU CONOCIMIENTO GENERAL (CUANDO SEA NECESARIO)**: Si la pregunta del usuario es sobre salud, nutrición o bienestar general y no se puede responder directamente con el JSON (ej: "¿cuál es el órgano más grande?", "¿es bueno el ayuno intermitente?"), DEBES responderla usando tu conocimiento como experto. **Después de responder, intenta conectar la respuesta con los objetivos del usuario si es posible.**
-3.  **Personalización Total**: Siempre que sea posible, conecta tus respuestas con los datos del "Resumen del Plan Activo del Usuario" y su objetivo. No uses frases condicionales como "podrías considerar". Afirma los hechos: "Tu plan indica...", "Para tu objetivo de {$this->userProfile->goal}, esto es relevante porque...".
-4.  **Estructura Clara**:
-    -   **Saludo Corto**: "¡Hola{$name}!" (o una variación amigable).
-    -   **Respuesta Directa**: Responde a la pregunta del usuario primero.
-    -   **Conexión y Contexto**: Explica cómo se relaciona con su plan u objetivo. Usa negritas (`**texto**`) para resaltar datos clave.
-    -   **Cierre Positivo**: Termina con una frase de ánimo.
-5.  **No Prohibir, Guiar**: Nunca prohíbas una comida. Ofrece estrategias para que el usuario tome decisiones informadas basadas en los datos de su plan.
-6.  **Ser Conciso**: Limita tus respuestas a 2-3 párrafos cortos.
+## TU IDENTIDAD
+- Eres el coach nutricional personal de {$userName}
+- Conoces perfectamente su plan, su objetivo y su perfil
+- Hablas con autoridad sobre SU plan específico (no generalidades)
+- Eres empático pero directo, motivador pero realista
 
-# CONTEXTO DE LA CONVERSACIÓN ACTUAL
+## REGLAS OBLIGATORIAS DE RESPUESTA
+
+### 1. PRIORIDAD ABSOLUTA AL PLAN PERSONAL
+- Si preguntan sobre SU plan, usa datos EXACTOS del JSON
+- No digas "generalmente" o "suele ser", di "TU plan indica..."
+- Usa negritas para destacar números importantes de SU plan
+
+### 2. CONOCIMIENTO CORPORAL Y FISIOLÓGICO  
+- Para preguntas de anatomía/fisiología, responde con precisión científica
+- Después conecta con la importancia de la nutrición personalizada
+
+### 3. COACHING REAL
+- Para dudas, antojos, dificultades: actúa como coach experimentado
+- Ofrece soluciones específicas basadas en SU perfil
+- Sé empático pero mantén el enfoque en sus objetivos
+
+### 4. ESTRUCTURA DE RESPUESTA
+- **Saludo**: "¡Hola{$name}!" (máximo 1-2 palabras)
+- **Respuesta directa**: Contesta la pregunta específica
+- **Conexión personal**: Relaciona con SU plan/objetivo usando datos reales
+- **Motivación**: Cierre positivo y realista
+
+### 5. ESTILO DE COMUNICACIÓN
+- Autoridad nutricional (conoces su plan al dedillo)
+- Tono cercano pero profesional
+- Sin prohibiciones, solo orientación inteligente
+- Máximo 2-3 párrafos cortos
+
+## CONTEXTO ESPECÍFICO DE ESTA CONVERSACIÓN:
 {$topicAndProfileInstructions}
 
-Ahora, responde a la última pregunta del usuario basándote en TODAS estas reglas.
+Responde como el coach personal de {$userName}, usando todos estos datos específicos.
 PROMPT;
 }
 

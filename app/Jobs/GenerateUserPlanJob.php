@@ -57,11 +57,16 @@ class GenerateUserPlanJob implements ShouldQueue
                 $planData = $this->getPersonalizedBackupPlan($user->profile, $nutritionalData, $userName);
             }
     
-            // ... resto del código sin cambios
-            // PASO 3: Generar recetas ultra-específicas con IA
-            Log::info('Paso 3: Generando recetas ultra-específicas basadas en perfil completo.', ['userId' => $user->id]);
-            $planWithRecipes = $this->generatePersonalizedRecipes($planData, $user->profile, $nutritionalData);
-            
+                
+            // PASO 3: Generar recetas ultra-específicas con IA SOLO SI TIENE SUSCRIPCIÓN ACTIVA
+if ($this->userHasActiveSubscription($user)) {
+    Log::info('Paso 3: Generando recetas ultra-específicas - Usuario con suscripción activa.', ['userId' => $user->id]);
+    $planWithRecipes = $this->generatePersonalizedRecipes($planData, $user->profile, $nutritionalData);
+} else {
+    Log::info('Paso 3: Omitiendo generación de recetas - Usuario en periodo de prueba.', ['userId' => $user->id]);
+    $planWithRecipes = $this->addTrialMessage($planData, $userName);
+}
+
             // PASO 4: Guardado del plan completo
             Log::info('Almacenando plan ultra-personalizado en la base de datos.', ['userId' => $user->id]);
             MealPlan::where('user_id', $user->id)->update(['is_active' => false]);
@@ -650,10 +655,12 @@ class GenerateUserPlanJob implements ShouldQueue
         $motivations = !empty($basicData['emotional_profile']['diet_motivations']) ? implode(', ', $basicData['emotional_profile']['diet_motivations']) : 'Ninguna especificada';
         
         // Instrucciones específicas según presupuesto
-        $budgetInstructions = $this->getDetailedBudgetInstructions($basicData['preferences']['budget'], $basicData['country']);
-        
+         
         // Instrucciones dietéticas específicas
         $dietaryInstructions = $this->getDetailedDietaryInstructions($basicData['preferences']['dietary_style']);
+
+        $budgetInstructions = $this->getDetailedBudgetInstructions($basicData['preferences']['budget'], $basicData['country']);
+         
         
         // Instrucciones de comunicación personalizadas
         $communicationInstructions = $this->getCommunicationStyleInstructions($communicationStyle, $preferredName);
@@ -721,6 +728,33 @@ class GenerateUserPlanJob implements ShouldQueue
         **ALIMENTOS ESPECÍFICOS PARA {$basicData['country']} Y SU PRESUPUESTO:**
         {$countrySpecificFoods}
         
+
+        **REGLAS ESPECÍFICAS DE INTERCAMBIOS POR PRESUPUESTO:**
+        
+        1. **EQUIVALENCIA NUTRICIONAL OBLIGATORIA:** 
+           - Cada intercambio debe mantener ±10 kcal máximo
+           - ±2g proteína máximo de diferencia
+           - Mismo grupo de macronutriente
+        
+        2. **INTERCAMBIOS PRESUPUESTO BAJO → ALTO:**
+           - Carne molida → Lomo de res
+           - Pollo muslo → Pechuga de pollo  
+           - Bonito/Jurel → Salmón fresco
+           - Maní → Almendras
+           - Aceite vegetal → Aceite oliva extra virgen
+           - Fideos básicos → Pasta integral/Quinua
+        
+        3. **MANTENER CONSISTENCIA:**
+           - Si es presupuesto BAJO: usar SOLO opciones económicas
+           - Si es presupuesto ALTO: usar SOLO opciones premium
+           - NO mezclar niveles de presupuesto en el mismo plan
+        
+        4. **PORCIONES AJUSTADAS:**
+           - Ajustar gramos para mantener equivalencia exacta
+           - Especificar siempre peso exacto + referencia visual
+           - Considerar diferencias nutricionales entre alternativas
+
+           
         **REGLAS CRÍTICAS PARA EL PLAN DE {$preferredName}:**
         1. **MACROS EXACTOS CALCULADOS:** Los macros finales DEBEN coincidir exactamente con los calculados específicamente para su edad ({$basicData['age']}), peso ({$basicData['weight']}kg), altura ({$basicData['height']}cm) y sexo ({$basicData['sex']})
         2. **CONSIDERACIONES BMI:** BMI actual: {$basicData['anthropometric_data']['bmi']} - Status: {$basicData['anthropometric_data']['weight_status']} - Ajustar plan según estado corporal
@@ -729,12 +763,26 @@ class GenerateUserPlanJob implements ShouldQueue
         5. **CONSIDERACIONES MÉDICAS:** " . ($basicData['health_status']['has_medical_condition'] ? "IMPORTANTE: Considerar su condición médica: {$basicData['health_status']['medical_condition']}" : "Sin restricciones médicas especiales") . "
         6. **ALERGIAS:** " . ($basicData['health_status']['has_allergies'] ? "CRÍTICO: Evitar completamente: {$basicData['health_status']['allergies']}" : "Sin alergias reportadas") . "
         7. **INTERCAMBIOS EQUIVALENTES:** Cada opción debe tener ±10 kcal, ±2g proteína máximo de diferencia
-        8. **PESOS ESPECÍFICOS:** SIEMPRE especificar si es crudo/seco o cocido
-        9. **MOTIVACIÓN:** Incluir elementos que apoyen sus motivaciones: {$motivations}
-        10. **DIFICULTADES:** Considerar y facilitar soluciones para: {$difficulties}
-        11. **EDAD Y METABOLISMO:** Plan adaptado para persona de {$basicData['age']} años ({$basicData['anthropometric_data']['bmr_category']})
-        12. **COMPOSICIÓN CORPORAL:** Ajustes específicos para su estado: {$basicData['anthropometric_data']['weight_status']}
+        8. **PORCIONES ESPECÍFICAS:** OBLIGATORIO usar gramos exactos. Para tortillas NUNCA usar 'mediana', 'grande', etc. Usar SIEMPRE peso en gramos: '60g (2 tortillas)', '90g (3 tortillas)'. Para todos los alimentos especificar peso exacto.
+        9. **PESOS ESPECÍFICOS:** SIEMPRE especificar si es crudo/seco o cocido
+        10. **MOTIVACIÓN:** Incluir elementos que apoyen sus motivaciones: {$motivations}
+        11. **MANTENER CONSISTENCIA:**
+            - Si es presupuesto BAJO: usar SOLO opciones económicas
+            - Si es presupuesto ALTO: usar SOLO opciones premium
+            - NO mezclar niveles de presupuesto en el mismo plan
+        12. **DIFICULTADES:** Considerar y facilitar soluciones para: {$difficulties}
+        13. **EDAD Y METABOLISMO:** Plan adaptado para persona de {$basicData['age']} años ({$basicData['anthropometric_data']['bmr_category']})
+        14. **COMPOSICIÓN CORPORAL:** Ajustes específicos para su estado: {$basicData['anthropometric_data']['weight_status']}
+        15. **REGLA ESPECIAL PARA TORTILLAS Y PRODUCTOS SIMILARES:**
+        - Tortillas: SIEMPRE usar peso en gramos + referencia: '60g (2 tortillas)', '90g (3 tortillas)'
+        - Pan: '60g (2 rebanadas)', '30g (1 rebanada)'
+        - Galletas/crackers: '25g (5 unidades)', '40g (8 unidades)'
+        - NUNCA usar términos vagos como 'mediana', 'grande', 'pequeña'
+        - SIEMPRE peso exacto + referencia visual entre paréntesis
         
+ES IMPORTANTE QUE SIGAS ESAS REGLAS MOSTRADAS ANTERIORMENTE, PORQUE ESE ES EL NUCLEO PRINCIPAL DE LA APP.
+Esto aplica para TODOS los alimentos donde el tamaño pueda ser ambiguo.
+
         **ESTRUCTURA JSON OBLIGATORIA PARA {$preferredName}:**
         ```json
         {
@@ -806,14 +854,14 @@ class GenerateUserPlanJob implements ShouldQueue
                     {\"name\": \"Atún en lata\", \"portion\": \"80g escurrido\", \"calories\": 145, \"protein\": 30, \"fats\": 2, \"carbohydrates\": 0},
                     {\"name\": \"Pollo (muslos)\", \"portion\": \"60g (peso en crudo)\", \"calories\": 140, \"protein\": 20, \"fats\": 7, \"carbohydrates\": 0}
                   ]
-                },
-                \"Carbohidratos\": {
-                  \"options\": [
-                    {\"name\": \"Avena tradicional\", \"portion\": \"40g (peso en seco)\", \"calories\": 150, \"protein\": 5, \"fats\": 3, \"carbohydrates\": 27},
-                    {\"name\": \"Pan integral\", \"portion\": \"2 rebanadas (60g)\", \"calories\": 155, \"protein\": 6, \"fats\": 2, \"carbohydrates\": 28},
-                    {\"name\": \"Tortillas de maíz\", \"portion\": \"2 unidades medianas\", \"calories\": 150, \"protein\": 4, \"fats\": 2, \"carbohydrates\": 30}
-                  ]
-                },
+                    },
+                  \"Carbohidratos\": {
+                    \"options\": [
+                        {\"name\": \"Avena tradicional\", \"portion\": \"40g (peso en seco)\", \"calories\": 150, \"protein\": 5, \"fats\": 3, \"carbohydrates\": 27},
+                        {\"name\": \"Pan integral\", \"portion\": \"60g (2 rebanadas)\", \"calories\": 155, \"protein\": 6, \"fats\": 2, \"carbohydrates\": 28},
+                        {\"name\": \"Tortillas de maíz\", \"portion\": \"60g (2 tortillas medianas)\", \"calories\": 150, \"protein\": 4, \"fats\": 2, \"carbohydrates\": 30}
+                    ]
+                    },
                 \"Grasas\": {
                   \"options\": [
                     {\"name\": \"Aceite de oliva\", \"portion\": \"1 cucharada (15ml)\", \"calories\": 135, \"protein\": 0, \"fats\": 15, \"carbohydrates\": 0},
@@ -898,44 +946,213 @@ class GenerateUserPlanJob implements ShouldQueue
         ";
     }
 
-    private function getDetailedBudgetInstructions($budget, $country): string
-    {
-        $budgetLevel = strtolower($budget);
-        $countryContext = strtolower($country);
+    
+    
+private function getDetailedBudgetInstructions($budget, $country): string
+{
+    $budgetLevel = strtolower($budget);
+    $countryContext = strtolower($country);
+    
+    if (str_contains($budgetLevel, 'bajo')) {
+        $baseInstructions = "**PRESUPUESTO BAJO - ALIMENTOS OBLIGATORIOS:**
         
-        if (str_contains($budgetLevel, 'bajo')) {
-            $baseInstructions = "**PRESUPUESTO BAJO - ALIMENTOS OBLIGATORIOS:**
-            - Proteínas: Huevo entero, Atún en lata, Pollo (muslos/encuentros), Lentejas, Frijoles, Carne molida
-            - Carbohidratos: Arroz blanco, Avena tradicional, Papa, Camote, Pasta común, Pan de molde
-            - Grasas: Aceite vegetal común, Mantequilla, Aguacate pequeño
-            **PROHIBIDO:** Salmón, Lomo de res, Almendras, Proteína en polvo, Quinua, Yogur griego";
-            
-            // Ajustes por país
-            if (str_contains($countryContext, 'perú')) {
-                $baseInstructions .= "\n**ESPECÍFICO PERÚ:** Priorizar quinua local, camote, frejoles, pescado bonito, pollo de granja.";
-            } elseif (str_contains($countryContext, 'méxico')) {
-                $baseInstructions .= "\n**ESPECÍFICO MÉXICO:** Priorizar frijoles negros, tortillas, pollo local, huevos de rancho.";
-            }
-            
-            return $baseInstructions;
-        } elseif (str_contains($budgetLevel, 'alto')) {
-            $baseInstructions = "**PRESUPUESTO ALTO - ALIMENTOS PREMIUM:**
-            - Proteínas: Salmón, Lomo de res, Pechuga de pollo, Proteína en polvo, Yogur griego, Quesos finos
-            - Carbohidratos: Quinua, Avena orgánica, Batata, Pan artesanal, Arroz integral
-            - Grasas: Aceite de oliva extra virgen, Almendras, Nueces, Aguacate, Aceite de coco";
-            
-            // Ajustes por país
-            if (str_contains($countryContext, 'perú')) {
-                $baseInstructions .= "\n**ESPECÍFICO PERÚ:** Incluir superalimentos andinos, quinua roja, palta, pescados frescos del Pacífico.";
-            } elseif (str_contains($countryContext, 'méxico')) {
-                $baseInstructions .= "\n**ESPECÍFICO MÉXICO:** Incluir aguacate premium, chía, amaranto, pescados del Golfo.";
-            }
-            
-            return $baseInstructions;
-        }
+        **PROTEÍNAS ECONÓMICAS:**
+        - Huevo entero (siempre disponible y económico)
+        - Carne molida (en lugar de cortes premium)
+        - Pollo (muslos/encuentros, NO pechuga)
+        - Pescado económico local (bonito, jurel, caballa - NO salmón)
+        - Atún en lata (opción práctica)
+        - Legumbres: lentejas, frijoles, garbanzos
         
-        return "**PRESUPUESTO MEDIO:** Balance entre calidad y costo, alimentos nutritivos accesibles localmente.";
+        **CARBOHIDRATOS BÁSICOS:**
+        - Arroz blanco (base alimentaria)
+        - Fideos/pasta común (opción económica)
+        - Papa (tubérculo básico)
+        - Camote (alternativa nutritiva)
+        - Avena tradicional (no instantánea)
+        - Pan de molde común
+        
+        **GRASAS ACCESIBLES:**
+        - Aceite vegetal común (NO aceite de oliva extra virgen)
+        - Maní (en lugar de almendras)
+        - Aguacate pequeño (cuando esté en temporada)
+        
+        **FRUTAS ESTACIONALES:**
+        - Plátano (disponible todo el año)
+        - Frutas locales de temporada
+        - Evitar frutos rojos y frutas importadas
+        
+        **PROHIBIDO EN PRESUPUESTO BAJO:**
+        Salmón, lomo de res, pechuga de pollo, almendras, nueces, frutos rojos, quinua importada, yogur griego, quesos premium, aceite de oliva extra virgen, proteína en polvo";
+        
+    } else { // PRESUPUESTO ALTO
+        $baseInstructions = "**PRESUPUESTO ALTO - ALIMENTOS PREMIUM:**
+        
+        **PROTEÍNAS PREMIUM:**
+        - Salmón fresco (en lugar de pescado básico)
+        - Lomo de res (en lugar de carne molida)
+        - Pechuga de pollo (corte premium)
+        - Pescados finos (corvina, lenguado, róbalo)
+        - Proteína en polvo (suplementación)
+        - Yogur griego (alta proteína)
+        - Quesos finos y madurados
+        
+        **CARBOHIDRATOS GOURMET:**
+        - Quinua (superfood andino)
+        - Avena orgánica
+        - Arroz integral/basmati
+        - Camote morado
+        - Pan artesanal/integral premium
+        - Pasta integral o de legumbres
+        
+        **GRASAS PREMIUM:**
+        - Aceite de oliva extra virgen
+        - Almendras, nueces, pistachos
+        - Aguacate hass grande
+        - Aceite de coco orgánico
+        - Semillas premium (chía, linaza)
+        
+        **FRUTAS GOURMET:**
+        - Frutos rojos (arándanos, frambuesas)
+        - Frutas importadas de calidad
+        - Frutas orgánicas
+        - Superfoods (açaí, goji)";
     }
+    
+    // Ajustes específicos por país
+    $countryAdjustments = $this->getCountrySpecificAdjustments($countryContext, $budgetLevel);
+    
+    return $baseInstructions . "\n\n" . $countryAdjustments;
+}
+
+
+/**
+ * Ajustes específicos por país expandidos
+ */
+
+private function getCountrySpecificAdjustments($country, $budgetLevel): string
+{
+    $adjustments = "";
+    
+    if (str_contains($country, 'perú')) {
+        if (str_contains($budgetLevel, 'bajo')) {
+            $adjustments = "**ESPECÍFICO PERÚ - PRESUPUESTO BAJO:**
+            - Pescados: bonito, jurel, caballa del litoral
+            - Tubérculos: papa nativa, camote, yuca
+            - Legumbres: frejoles canarios, lentejas
+            - Cereales: quinua local (cuando esté accesible)
+            - Frutas: plátano, papaya, naranja de temporada";
+        } else {
+            $adjustments = "**ESPECÍFICO PERÚ - PRESUPUESTO ALTO:**
+            - Pescados: salmón chileno, lenguado, corvina fresca
+            - Superfoods: quinua roja/negra, maca, cacao
+            - Palta hass premium, lúcuma
+            - Carnes: lomo fino, alpaca (si está disponible)";
+        }
+    }
+    
+    elseif (str_contains($country, 'méxico')) {
+        if (str_contains($budgetLevel, 'bajo')) {
+            $adjustments = "**ESPECÍFICO MÉXICO - PRESUPUESTO BAJO:**
+            - Legumbres: frijoles negros, bayos, pintos
+            - Tortillas de maíz (base alimentaria)
+            - Pollo local de granja
+            - Huevos de rancho
+            - Nopales, chiles, jitomate
+            - Frutas: plátano, papaya, naranja";
+        } else {
+            $adjustments = "**ESPECÍFICO MÉXICO - PRESUPUESTO ALTO:**
+            - Aguacate hass premium mexicano
+            - Chía orgánica, amaranto
+            - Pescados del Golfo: huachinango, mero
+            - Cacao mexicano premium
+            - Quesos artesanales (oaxaca, manchego)";
+        }
+    }
+    
+    elseif (str_contains($country, 'colombia')) {
+        if (str_contains($budgetLevel, 'bajo')) {
+            $adjustments = "**ESPECÍFICO COLOMBIA - PRESUPUESTO BAJO:**
+            - Frijoles rojos cargamanto
+            - Arroz blanco básico
+            - Plátano verde y maduro
+            - Pollo campesino
+            - Yuca, papa criolla
+            - Panela como endulzante
+            - Huevos criollos";
+        } else {
+            $adjustments = "**ESPECÍFICO COLOMBIA - PRESUPUESTO ALTO:**
+            - Salmón del Pacífico
+            - Aguacate hass colombiano
+            - Quinua andina
+            - Frutas tropicales premium: maracuyá, lulo
+            - Café orgánico
+            - Carne de res premium (lomo, solomo)";
+        }
+    }
+    
+    elseif (str_contains($country, 'chile')) {
+        if (str_contains($budgetLevel, 'bajo')) {
+            $adjustments = "**ESPECÍFICO CHILE - PRESUPUESTO BAJO:**
+            - Pescados: jurel, sardina, merluza básica
+            - Legumbres: lentejas, porotos
+            - Papa chilena básica
+            - Pan marraqueta
+            - Huevos de campo
+            - Manzanas, peras de temporada";
+        } else {
+            $adjustments = "**ESPECÍFICO CHILE - PRESUPUESTO ALTO:**
+            - Salmón del Atlántico chileno (premium)
+            - Palta hass de exportación
+            - Mariscos: ostiones, centolla
+            - Carnes premium: lomo vetado
+            - Vinos para cocinar
+            - Frutos rojos chilenos";
+        }
+    }
+    
+    elseif (str_contains($country, 'argentina')) {
+        if (str_contains($budgetLevel, 'bajo')) {
+            $adjustments = "**ESPECÍFICO ARGENTINA - PRESUPUESTO BAJO:**
+            - Carne: falda, tapa de asado, carne molida
+            - Pasta básica argentina
+            - Papa, batata
+            - Lentejas, garbanzos
+            - Huevos de campo
+            - Yerba mate
+            - Pan francés básico";
+        } else {
+            $adjustments = "**ESPECÍFICO ARGENTINA - PRESUPUESTO ALTO:**
+            - Cortes premium: lomo, bife de chorizo
+            - Salmón patagónico
+            - Quesos argentinos: roquefort, gruyere
+            - Vinos Malbec para cocinar
+            - Carne orgánica grass-fed
+            - Nueces de Mendoza";
+        }
+    }
+    
+    elseif (str_contains($country, 'ecuador')) {
+        if (str_contains($budgetLevel, 'bajo')) {
+            $adjustments = "**ESPECÍFICO ECUADOR - PRESUPUESTO BAJO:**
+            - Pescados: corvina básica, atún
+            - Frejoles, lentejas ecuatorianas
+            - Plátano verde (base alimentaria)
+            - Arroz básico
+            - Yuca, camote
+            - Huevos criollos";
+        } else {
+            $adjustments = "**ESPECÍFICO ECUADOR - PRESUPUESTO ALTO:**
+            - Salmón ecuatoriano
+            - Cacao ecuatoriano premium
+            - Quinua andina
+            - Camarones del Pacífico
+            - Frutas tropicales: pitahaya, tomate de árbol";
+        }
+    }
+    
+    return $adjustments;
+}
 
     private function getDetailedDietaryInstructions($dietaryStyle): string
     {
@@ -990,35 +1207,130 @@ class GenerateUserPlanJob implements ShouldQueue
         return "**COMUNICACIÓN ADAPTATIVA:** Mezcla todos los estilos según el contexto, siendo versátil.";
     }
 
-    private function getCountrySpecificFoods($country, $budget): string
-    {
-        $countryLower = strtolower($country);
-        $budgetLower = strtolower($budget);
-        
-        $commonFoods = "Alimentos locales y tradicionales de temporada";
-        
-        if (str_contains($countryLower, 'perú')) {
-            if (str_contains($budgetLower, 'bajo')) {
-                $commonFoods = "Quinua local, camote, papa nativa, frejoles, bonito, pollo de corral, huevos, plátano, yuca.";
-            } else {
-                $commonFoods = "Quinua roja/negra, palta, pescados frescos (lenguado, corvina), mariscos, frutas exóticas, chía andina.";
-            }
-        } elseif (str_contains($countryLower, 'méxico')) {
-            if (str_contains($budgetLower, 'bajo')) {
-                $commonFoods = "Frijoles negros/bayos, tortillas de maíz, pollo local, huevos, nopales, chiles, jitomate.";
-            } else {
-                $commonFoods = "Aguacate hass, amaranto, chía, pescados del Golfo, quesos artesanales, cacao mexicano.";
-            }
-        } elseif (str_contains($countryLower, 'argentina')) {
-            if (str_contains($budgetLower, 'bajo')) {
-                $commonFoods = "Carne vacuna básica, huevos, papa, arroz, lentejas, yerba mate.";
-            } else {
-                $commonFoods = "Cortes premium de carne, salmón, quinua, vinos para cocinar, quesos argentinos.";
+ private function getCountrySpecificFoods($country, $budget): string
+{
+    $countryLower = strtolower($country);
+    $budgetLower = strtolower($budget);
+    
+    $foodList = $this->getDetailedCountryFoodList($countryLower, $budgetLower);
+    
+    return "**INGREDIENTES ESPECÍFICOS DE " . strtoupper($country) . ":**\n" . $foodList;
+}
+
+    
+
+private function getDetailedCountryFoodList($country, $budget): string
+{
+    $foodMatrix = [
+        'perú' => [
+            'bajo' => "Bonito, jurel, carne molida, pollo muslo, huevos, frejoles canarios, lentejas, papa nativa, camote, arroz blanco, fideos, plátano, papaya, maní, aceite vegetal",
+            'alto' => "Salmón, corvina, lomo de res, pechuga de pollo, quinua roja/negra, palta hass, maca en polvo, cacao peruano, lúcuma, almendras, aceite de oliva extra virgen"
+        ],
+        'méxico' => [
+            'bajo' => "Pollo granja, huevos rancho, carne molida, frijoles negros, tortillas maíz, arroz básico, plátano, papaya, maní, aceite vegetal, nopales, chiles",
+            'alto' => "Aguacate hass premium, chía orgánica, amaranto, pescado del Golfo, carne premium, quesos artesanales, cacao mexicano, almendras, aceite oliva"
+        ],
+        'colombia' => [
+            'bajo' => "Pollo campesino, huevos criollos, carne molida, frijoles rojos, plátano verde/maduro, arroz blanco, yuca, papa criolla, panela, maní",
+            'alto' => "Salmón Pacífico, aguacate hass, quinua andina, carne premium, frutas tropicales premium, café orgánico, almendras, aceite oliva extra virgen"
+        ],
+        'chile' => [
+            'bajo' => "Jurel, sardina, merluza básica, pollo campo, huevos, lentejas, porotos, papa chilena, pan marraqueta, manzanas temporada, aceite vegetal",
+            'alto' => "Salmón Atlántico chileno, palta hass exportación, mariscos premium, lomo vetado, frutos rojos chilenos, nueces, aceite oliva premium"
+        ],
+        'argentina' => [
+            'bajo' => "Carne molida, falda, tapa asado, huevos campo, pasta básica, papa, batata, lentejas, garbanzos, pan francés, aceite girasol",
+            'alto' => "Lomo, bife chorizo, salmón patagónico, quesos premium, carne orgánica, nueces Mendoza, aceite oliva, vinos para cocinar"
+        ],
+        'ecuador' => [
+            'bajo' => "Corvina básica, atún, pollo criollo, huevos, frejoles, plátano verde, arroz básico, yuca, camote, aceite palma",
+            'alto' => "Salmón ecuatoriano, camarones Pacífico, cacao premium, quinua andina, pitahaya, tomate árbol, almendras, aceite coco"
+        ]
+    ];
+    
+    // Buscar coincidencia exacta primero
+    foreach ($foodMatrix as $countryKey => $budgets) {
+        if (str_contains($country, $countryKey)) {
+            if (str_contains($budget, 'bajo') && isset($budgets['bajo'])) {
+                return $budgets['bajo'];
+            } elseif (str_contains($budget, 'alto') && isset($budgets['alto'])) {
+                return $budgets['alto'];
             }
         }
-        
-        return "Ingredientes específicos del país: " . $commonFoods;
     }
+    
+    // Fallback genérico
+    if (str_contains($budget, 'bajo')) {
+        return "Huevos, carne molida, pollo muslo, arroz blanco, pasta básica, legumbres, papa, aceite vegetal, frutas de temporada, maní";
+    } else {
+        return "Salmón, lomo de res, pechuga pollo, quinua, aguacate premium, frutos rojos, almendras, aceite oliva extra virgen, quesos finos";
+    }
+}
+
+
+/**
+ * Validador de equivalencias nutricionales por presupuesto
+ */
+private function validateNutritionalEquivalence($lowBudgetOption, $highBudgetOption): bool
+{
+    // Verificar que las opciones mantengan equivalencia nutricional (±10 kcal, ±2g proteína)
+    $calorieDifference = abs($lowBudgetOption['calories'] - $highBudgetOption['calories']);
+    $proteinDifference = abs($lowBudgetOption['protein'] - $highBudgetOption['protein']);
+    
+    return $calorieDifference <= 10 && $proteinDifference <= 2;
+}
+
+/**
+ * Generador de intercambios por presupuesto
+ */
+private function generateBudgetAlternatives($baseIngredient, $country, $currentBudget): array
+{
+    $alternatives = [
+        'proteinas' => [
+            'bajo_a_alto' => [
+                'carne molida' => 'lomo de res',
+                'pollo muslo' => 'pechuga de pollo',
+                'bonito' => 'salmón fresco',
+                'atún lata' => 'pescado fresco premium',
+                'huevo entero' => 'claras de huevo + proteína polvo'
+            ],
+            'alto_a_bajo' => [
+                'lomo de res' => 'carne molida',
+                'pechuga de pollo' => 'pollo muslo',
+                'salmón fresco' => 'bonito',
+                'pescado premium' => 'atún en lata'
+            ]
+        ],
+        'carbohidratos' => [
+            'bajo_a_alto' => [
+                'fideos básicos' => 'pasta integral',
+                'arroz blanco' => 'arroz integral/quinua',
+                'pan molde' => 'pan artesanal'
+            ],
+            'alto_a_bajo' => [
+                'quinua' => 'arroz blanco',
+                'pasta integral' => 'fideos básicos',
+                'pan artesanal' => 'pan de molde'
+            ]
+        ],
+        'grasas' => [
+            'bajo_a_alto' => [
+                'aceite vegetal' => 'aceite oliva extra virgen',
+                'maní' => 'almendras',
+                'aguacate pequeño' => 'aguacate hass grande'
+            ],
+            'alto_a_bajo' => [
+                'almendras' => 'maní',
+                'aceite oliva extra virgen' => 'aceite vegetal',
+                'nueces premium' => 'maní tostado'
+            ]
+        ]
+    ];
+    
+    return $alternatives;
+}
+
+
 
     /**
      * Generación de recetas ULTRA-PERSONALIZADAS
@@ -1428,6 +1740,33 @@ class GenerateUserPlanJob implements ShouldQueue
         
         return $get; // Mantenimiento
     }
+
+    /**
+ * Verificar si el usuario tiene suscripción activa
+ */
+private function userHasActiveSubscription(User $user): bool
+{
+    return $user->subscription_status === 'active';
+}
+
+/**
+ * Agregar mensaje informativo para usuarios de prueba
+ */
+private function addTrialMessage(array $planData, string $userName): array
+{
+    // Agregar mensaje informativo en cada comida para usuarios de prueba
+    if (isset($planData['nutritionPlan']['meals'])) {
+        foreach ($planData['nutritionPlan']['meals'] as $mealName => &$mealData) {
+            $mealData['trial_message'] = [
+                'title' => 'Recetas Personalizadas',
+                'message' => "¡Hola {$userName}! Las recetas personalizadas están disponibles con la suscripción completa.",
+                'upgrade_hint' => 'Activa tu suscripción para acceder a recetas paso a paso.'
+            ];
+        }
+    }
+
+    return $planData;
+}
 
     private function generateMotivationalMessage($communicationStyle, $preferredName, $context): string
     {
