@@ -1,4 +1,4 @@
-    <?php
+     <?php
 
     use Illuminate\Http\Request;
     use Illuminate\Support\Facades\Route;
@@ -15,6 +15,7 @@
     use App\Http\Controllers\IngredientController;
     use App\Http\Controllers\RecipeImageController;
     use App\Http\Controllers\BodyAnalysisController;
+    use App\Http\Controllers\MealPlanController;
 
     
 
@@ -45,6 +46,15 @@
         Route::post('/affiliates/validate-code', [AffiliateController::class, 'validateCode']);
 
 
+
+         Route::prefix('meal-plans')->group(function () {
+        Route::get('/active', [MealPlanController::class, 'getActivePlan']);
+        Route::post('/validate-selection', [MealPlanController::class, 'validateMealSelection']);
+        Route::get('/statistics', [MealPlanController::class, 'getPlanStatistics']);
+        Route::post('/regenerate', [MealPlanController::class, 'regeneratePlan']);
+        Route::get('/history', [MealPlanController::class, 'getPlanHistory']);
+    });
+    
         Route::get('/user/name', [AuthController::class, 'getUserName']);
         // Ruta para actualizar el OneSignal Player ID
         Route::post('/user/update-onesignal-id', function (Request $request) {

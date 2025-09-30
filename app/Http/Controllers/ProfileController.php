@@ -27,8 +27,7 @@ class ProfileController extends Controller
             'weekly_activity' => 'nullable|string|max:255', // Agrega esta línea
             'sport' => 'nullable|array',
             'training_frequency' => 'nullable|string|max:255',
-            'meal_count' => 'nullable|string|max:255',
-            'breakfast_time' => 'nullable|string|max:255',
+             'breakfast_time' => 'nullable|string|max:255',
             'lunch_time' => 'nullable|string|max:255',
             'dinner_time' => 'nullable|string|max:255',
             'dietary_style' => 'nullable|string|max:255',
