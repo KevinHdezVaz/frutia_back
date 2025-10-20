@@ -107,6 +107,32 @@ class MercadoPagoService
         }
     }
 
+
+ 
+
+public function getMerchantOrderInfo($orderId)
+{
+    try {
+        Log::info('Getting Merchant Order info:', ['order_id' => $orderId]);
+
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . $this->accessToken,
+            'Content-Type' => 'application/json',
+            'Accept' => 'application/json'
+        ])->get($this->baseUrl . "/merchant_orders/{$orderId}"); // Endpoint correcto
+
+        if ($response->successful()) {
+            return $response->json();
+        }
+
+        Log::error('Error getting Merchant Order info:', $response->json());
+        throw new \Exception('Error getting Merchant Order info: ' . json_encode($response->json()));
+    } catch (\Exception $e) {
+        Log::error('Merchant Order info error:', ['message' => $e->getMessage(), 'order_id' => $orderId]);
+        throw $e;
+    }
+}
+
     public function validatePaymentStatus($paymentId)
     {
         try {

@@ -33,10 +33,10 @@ class PaymentController extends Controller
      }
 
      
-public function createPreference(Request $request)
+     public function createPreference(Request $request)
 {
     $request->validate([
-        'plan_id' => 'required|string', // Ya no validamos in:monthly,annual
+        'plan_id' => 'required|string',
         'affiliate_code' => 'nullable|string|exists:affiliates,referral_code',
     ]);
 
@@ -44,11 +44,9 @@ public function createPreference(Request $request)
     $planId = $request->input('plan_id');
     $affiliateCode = $request->input('affiliate_code');
 
-    // ▼▼▼ INICIO DE CAMBIOS ▼▼▼
-
     // 1. Buscamos el plan en la base de datos
     $plan = Plan::where('plan_id', $planId)->where('is_active', true)->first();
-
+    
     if (!$plan) {
         return response()->json(['error' => 'Plan inválido o no disponible'], 400);
     }
@@ -58,7 +56,10 @@ public function createPreference(Request $request)
     $affiliateId = null;
 
     if ($affiliateCode) {
-        $affiliate = Affiliate::where('referral_code', $affiliateCode)->where('status', 'active')->first();
+        $affiliate = Affiliate::where('referral_code', $affiliateCode)
+                              ->where('status', 'active')
+                              ->first();
+        
         if ($affiliate) {
             $discountPercentage = $affiliate->discount_percentage;
             $discountAmount = ($finalPrice * $discountPercentage) / 100;
@@ -90,15 +91,43 @@ public function createPreference(Request $request)
         'external_reference' => "user_{$user->id}_plan_{$planId}_affiliate_{$affiliateId}_" . time(),
     ];
 
-    // ▲▲▲ FIN DE CAMBIOS ▲▲▲
-
     try {
         $preference = $this->mercadoPagoService->createPreference($preferenceData);
-        return response()->json(['init_point' => $preference['init_point']]);
+        
+        // 🔥 CAMBIO CRÍTICO: SIEMPRE usar init_point (no sandbox) con credenciales de producción
+        // Esto es lo que funciona según la documentación oficial
+        $initPoint = $preference['init_point'];
+        
+        Log::info('Payment preference created successfully', [
+            'plan_id' => $planId,
+            'user_id' => $user->id,
+            'final_price' => $finalPrice,
+            'currency' => $plan->currency,
+            'affiliate_id' => $affiliateId,
+            'init_point' => $initPoint,
+            'preference_id' => $preference['id'] ?? 'N/A'
+        ]);
+        
+        return response()->json([
+            'init_point' => $initPoint,
+            'preference_id' => $preference['id'] ?? null
+        ]);
+        
     } catch (\Exception $e) {
-        Log::error('Error creating MercadoPago preference from controller: ' . $e->getMessage());
-        return response()->json(['error' => 'No se pudo iniciar el proceso de pago.'], 500);
+        Log::error('Error creating MercadoPago preference from controller', [
+            'error' => $e->getMessage(),
+            'user_id' => $user->id,
+            'plan_id' => $planId,
+            'trace' => $e->getTraceAsString()
+        ]);
+        
+        return response()->json([
+            'error' => 'No se pudo iniciar el proceso de pago.',
+            'message' => config('app.debug') ? $e->getMessage() : 'Error interno del servidor'
+        ], 500);
     }
 }
+
+
 
 }
