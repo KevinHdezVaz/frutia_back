@@ -166,7 +166,7 @@ private function validateGeneratedPlan($planData, $nutritionalData): array
 {
     $errors = [];
     $warnings = [];
-    $totalMacros = ['protein' => 0, 'carbs' => 0, 'fats' => 0, 'calories' => 0];
+    $totalMacros = ['protein' => 0, 'carbs' => 0, 'fats' => 0, 'calories' => 0, 'fiber' => 0];
     $foodAppearances = [];
 
     if (!isset($planData['nutritionPlan']['meals'])) {
@@ -195,6 +195,11 @@ private function validateGeneratedPlan($planData, $nutritionalData): array
                 $totalMacros['carbs'] += $firstOption['carbohydrates'] ?? 0;
                 $totalMacros['fats'] += $firstOption['fats'] ?? 0;
                 $totalMacros['calories'] += $firstOption['calories'] ?? 0;
+                
+                // ✅ NUEVO: Acumular fibra
+                if (isset($firstOption['fiber'])) {
+                    $totalMacros['fiber'] += $firstOption['fiber'];
+                }
 
                 // Registrar apariciones de alimentos
                 foreach ($categoryData['options'] as $option) {
@@ -219,7 +224,7 @@ private function validateGeneratedPlan($planData, $nutritionalData): array
         }
     }
 
-    // NUEVO: Validar que no haya huevos en múltiples comidas
+    // ✅ VALIDACIÓN: Huevos máximo 1 vez al día
     $mealsWithEggs = [];
     foreach ($planData['nutritionPlan']['meals'] as $mealName => $mealData) {
         $hasEggInMeal = false;
@@ -229,7 +234,6 @@ private function validateGeneratedPlan($planData, $nutritionalData): array
                 continue;
             }
 
-            // Verificar cada opción en la categoría
             foreach ($categoryData['options'] as $option) {
                 if ($this->isEggProduct($option['name'] ?? '')) {
                     $hasEggInMeal = true;
@@ -239,61 +243,58 @@ private function validateGeneratedPlan($planData, $nutritionalData): array
 
             if ($hasEggInMeal) {
                 $mealsWithEggs[] = $mealName;
-                break; // No necesitamos seguir revisando esta comida
+                break;
             }
         }
     }
 
-    // Si hay huevos en más de una comida, es un error
     if (count($mealsWithEggs) > 1) {
         $errors[] = 'Huevos aparecen en múltiples comidas (máximo 1 vez al día): ' . implode(', ', $mealsWithEggs);
     }
 
-  // 🔴 VALIDACIÓN CRÍTICA: Quinua NUNCA en desayuno
-if (isset($planData['nutritionPlan']['meals']['Desayuno'])) {
-    foreach ($planData['nutritionPlan']['meals']['Desayuno'] as $category => $categoryData) {
-        foreach ($categoryData['options'] ?? [] as $option) {
-            $foodName = strtolower($option['name'] ?? '');
-            if (str_contains($foodName, 'quinua') || str_contains($foodName, 'quinoa')) {
-                $errors[] = "❌ CRÍTICO: Quinua no permitida en desayuno (solo almuerzo/cena)";
-                Log::error("Quinua detectada en desayuno", [
-                    'option' => $option,
-                    'category' => $category
-                ]);
+    // ✅ VALIDACIÓN: Quinua NUNCA en desayuno
+    if (isset($planData['nutritionPlan']['meals']['Desayuno'])) {
+        foreach ($planData['nutritionPlan']['meals']['Desayuno'] as $category => $categoryData) {
+            foreach ($categoryData['options'] ?? [] as $option) {
+                $foodName = strtolower($option['name'] ?? '');
+                if (str_contains($foodName, 'quinua') || str_contains($foodName, 'quinoa')) {
+                    $errors[] = "❌ CRÍTICO: Quinua no permitida en desayuno (solo almuerzo/cena)";
+                    Log::error("Quinua detectada en desayuno", [
+                        'option' => $option,
+                        'category' => $category
+                    ]);
+                }
             }
         }
     }
-}
 
-// 🔴 NUEVA VALIDACIÓN: Verificar prioridad de alimentos
-$lessPreferredInPlan = [];
-foreach ($planData['nutritionPlan']['meals'] as $mealName => $mealData) {
-    foreach ($mealData as $category => $categoryData) {
-        if ($category === 'Carbohidratos' || $category === 'Grasas') {
-            foreach ($categoryData['options'] ?? [] as $index => $option) {
-                $foodName = strtolower($option['name'] ?? '');
-                
-                // Verificar si es un alimento menos preferido en primera opción
-                $leastPreferred = ['camote', 'maní', 'mantequilla de maní'];
-                foreach ($leastPreferred as $lp) {
-                    if (str_contains($foodName, $lp) && $index === 0) {
-                        $warnings[] = "Alimento menos preferido '{$option['name']}' en primera opción de {$mealName}/{$category}";
-                        $lessPreferredInPlan[] = "{$mealName} - {$option['name']}";
+    // ✅ VALIDACIÓN: Prioridad de alimentos
+    $lessPreferredInPlan = [];
+    foreach ($planData['nutritionPlan']['meals'] as $mealName => $mealData) {
+        foreach ($mealData as $category => $categoryData) {
+            if ($category === 'Carbohidratos' || $category === 'Grasas') {
+                foreach ($categoryData['options'] ?? [] as $index => $option) {
+                    $foodName = strtolower($option['name'] ?? '');
+                    
+                    $leastPreferred = ['camote', 'maní', 'mantequilla de maní'];
+                    foreach ($leastPreferred as $lp) {
+                        if (str_contains($foodName, $lp) && $index === 0) {
+                            $warnings[] = "Alimento menos preferido '{$option['name']}' en primera opción de {$mealName}/{$category}";
+                            $lessPreferredInPlan[] = "{$mealName} - {$option['name']}";
+                        }
                     }
                 }
             }
         }
     }
-}
 
-    // NUEVA VALIDACIÓN: Pesos en cocido vs crudo
+    // ✅ VALIDACIÓN: Pesos cocido vs crudo
     foreach ($planData['nutritionPlan']['meals'] as $mealName => $mealData) {
         if (isset($mealData['Carbohidratos']['options'])) {
             foreach ($mealData['Carbohidratos']['options'] as $option) {
                 $foodName = strtolower($option['name'] ?? '');
                 $portion = $option['portion'] ?? '';
                 
-                // Lista de alimentos que deben estar en cocido
                 $mustBeCooked = ['papa', 'arroz', 'camote', 'fideo', 'frijol', 'quinua', 'quinoa', 'pan', 'tortilla', 'galleta'];
                 
                 $shouldBeCooked = false;
@@ -304,7 +305,6 @@ foreach ($planData['nutritionPlan']['meals'] as $mealName => $mealData) {
                     }
                 }
                 
-                // Verificar si está marcado como cocido
                 $isCooked = str_contains(strtolower($portion), 'cocido');
                 $isRaw = str_contains(strtolower($portion), 'crudo') || str_contains(strtolower($portion), 'seco');
                 
@@ -312,7 +312,6 @@ foreach ($planData['nutritionPlan']['meals'] as $mealName => $mealData) {
                     $errors[] = "{$option['name']} debe estar en peso cocido, no crudo";
                 }
                 
-                // Avena y crema de arroz deben estar en crudo
                 if ((str_contains($foodName, 'avena') || str_contains($foodName, 'crema de arroz')) && $isCooked) {
                     $errors[] = "{$option['name']} debe estar en peso seco/crudo, no cocido";
                 }
@@ -320,7 +319,26 @@ foreach ($planData['nutritionPlan']['meals'] as $mealName => $mealData) {
         }
     }
 
-    // Validar macros totales (tolerancia 5%)
+    // ✅ NUEVO: Validar vegetales obligatorios en comidas principales
+    $mainMeals = ['Desayuno', 'Almuerzo', 'Cena'];
+    
+    foreach ($mainMeals as $mealName) {
+        if (isset($planData['nutritionPlan']['meals'][$mealName]['Vegetales'])) {
+            $vegetableCalories = $planData['nutritionPlan']['meals'][$mealName]['Vegetales']['options'][0]['calories'] ?? 0;
+            
+            if ($vegetableCalories < 100) {
+                $warnings[] = "{$mealName} tiene solo {$vegetableCalories} kcal en vegetales (mínimo requerido: 100 kcal)";
+            }
+            
+            if ($vegetableCalories > 150) {
+                $warnings[] = "{$mealName} tiene {$vegetableCalories} kcal en vegetales (máximo recomendado: 150 kcal)";
+            }
+        } else {
+            $errors[] = "{$mealName} NO incluye vegetales (mínimo obligatorio: 100 kcal)";
+        }
+    }
+
+    // ✅ VALIDACIÓN: Macros totales (tolerancia 5%)
     $targetMacros = $nutritionalData['macros'];
     $tolerance = 0.05;
 
@@ -355,14 +373,27 @@ foreach ($planData['nutritionPlan']['meals'] as $mealName => $mealData) {
         );
     }
 
-    // NUEVO: Validación de balance entre comidas
+    // ✅ NUEVO: Validar fibra total
+    if ($totalMacros['fiber'] > 0) {
+        $sex = $nutritionalData['basic_data']['sex'] ?? 'masculino';
+        $targetFiber = (strtolower($sex) === 'masculino') ? 38 : 25;
+        
+        if ($totalMacros['fiber'] < $targetFiber * 0.8) { // 80% del objetivo mínimo
+            $warnings[] = sprintf(
+                'Fibra baja: %dg (objetivo: %dg diarios)',
+                $totalMacros['fiber'],
+                $targetFiber
+            );
+        }
+    }
+
+    // ✅ VALIDACIÓN: Balance entre comidas
     $mealDistribution = ['Desayuno' => 0.30, 'Almuerzo' => 0.40, 'Cena' => 0.30];
     foreach ($planData['nutritionPlan']['meals'] as $mealName => $mealData) {
         if (isset($mealDistribution[$mealName])) {
             $expectedPercentage = $mealDistribution[$mealName];
             $expectedCalories = $targetMacros['calories'] * $expectedPercentage;
 
-            // Calcular calorías reales de esta comida
             $mealCalories = 0;
             foreach ($mealData as $category => $categoryData) {
                 if (isset($categoryData['options'][0])) {
@@ -371,7 +402,7 @@ foreach ($planData['nutritionPlan']['meals'] as $mealName => $mealData) {
             }
 
             $calorieDiff = abs($mealCalories - $expectedCalories);
-            if ($calorieDiff > $expectedCalories * 0.15) { // 15% de tolerancia
+            if ($calorieDiff > $expectedCalories * 0.15) {
                 $warnings[] = sprintf(
                     '%s desequilibrado: esperado ~%d kcal, tiene %d kcal',
                     $mealName,
@@ -391,7 +422,6 @@ foreach ($planData['nutritionPlan']['meals'] as $mealName => $mealData) {
         'meals_with_eggs' => $mealsWithEggs
     ];
 }
-
     private function isFoodHighBudget($foodName): bool
     {
         $highBudgetFoods = [
@@ -583,96 +613,106 @@ foreach ($planData['nutritionPlan']['meals'] as $mealName => $mealData) {
         // NUEVO: Calcular macros con porcentajes fijos según objetivo
         $macros = $this->calculateFixedMacronutrients($adjustedCalories, $basicData['goal']);
 
-        return [
-            'basic_data' => $basicData,
-            'tmb' => round($tmb),
-            'activity_factor' => $activityFactor,
-            'get' => round($get),
-            'target_calories' => round($adjustedCalories),
-            'macros' => $macros,
-            'calculation_date' => now(),
-            'personalization_level' => 'ultra_high'
-        ];
+       // Calcular micronutrientes
+$micronutrients = $this->calculateMicronutrientTargets($basicData);
+
+return [
+    'basic_data' => $basicData,
+    'tmb' => round($tmb),
+    'activity_factor' => $activityFactor,
+    'get' => round($get),
+    'target_calories' => round($adjustedCalories),
+    'macros' => $macros,
+    'micronutrients' => $micronutrients,
+    'calculation_date' => now(),
+    'personalization_level' => 'ultra_high'
+];
     }
 
 
-    private function calculateFixedMacronutrients($calories, $goal): array
-    {
-        $goalLower = strtolower($goal);
+private function calculateFixedMacronutrients($calories, $goal): array
+{
+    $goalLower = strtolower($goal);
 
-        // Porcentajes según PDF ACTUALIZADO (40/40/20 para bajar grasa)
-        if (str_contains($goalLower, 'bajar grasa')) {
-            $proteinPercentage = 0.40;  // ← CORREGIDO de 0.45
-            $carbPercentage = 0.40;     // ← CORREGIDO de 0.35
-            $fatPercentage = 0.20;
-        } elseif (str_contains($goalLower, 'aumentar músculo')) {
-            $proteinPercentage = 0.30;
-            $carbPercentage = 0.45;
-            $fatPercentage = 0.25;
-        } elseif (str_contains($goalLower, 'comer más saludable')) {
-            $proteinPercentage = 0.30;
-            $carbPercentage = 0.40;
-            $fatPercentage = 0.30;
-        } elseif (str_contains($goalLower, 'mejorar rendimiento')) {
-            $proteinPercentage = 0.25;
-            $carbPercentage = 0.50;
-            $fatPercentage = 0.25;
-        } else {
-            $proteinPercentage = 0.30;
-            $carbPercentage = 0.40;
-            $fatPercentage = 0.30;
-        }
-
-        $proteinCalories = $calories * $proteinPercentage;
-        $carbCalories = $calories * $carbPercentage;
-        $fatCalories = $calories * $fatPercentage;
-
-        $proteinGrams = $proteinCalories / 4;
-        $carbGrams = $carbCalories / 4;
-        $fatGrams = $fatCalories / 9;
-
-        return [
-            'calories' => round($calories),
-            'protein' => [
-                'grams' => round($proteinGrams),
-                'calories' => round($proteinCalories),
-                'percentage' => round($proteinPercentage * 100, 1),
-                'per_kg' => 0
-            ],
-            'fats' => [
-                'grams' => round($fatGrams),
-                'calories' => round($fatCalories),
-                'percentage' => round($fatPercentage * 100, 1),
-                'per_kg' => 0
-            ],
-            'carbohydrates' => [
-                'grams' => round($carbGrams),
-                'calories' => round($carbCalories),
-                'percentage' => round($carbPercentage * 100, 1),
-                'per_kg' => 0
-            ]
-        ];
+    // ✅ MODIFICACIÓN APLICADA AQUÍ - DEFINICIÓN
+    if (str_contains($goalLower, 'bajar grasa')) {
+        // ANTES: 40/40/20
+        // AHORA: 35/40/25
+        $proteinPercentage = 0.35;  // ← Era 0.40 (-5%)
+        $carbPercentage = 0.40;     // Mantiene
+        $fatPercentage = 0.25;      // ← Era 0.20 (+5%)
+    } 
+    // ✅ MODIFICACIÓN APLICADA AQUÍ - VOLUMEN
+    elseif (str_contains($goalLower, 'aumentar músculo')) {
+        // ANTES: 30/45/25
+        // AHORA: 25/50/25
+        $proteinPercentage = 0.25;  // ← Era 0.30 (-5%)
+        $carbPercentage = 0.50;     // ← Era 0.45 (+5%)
+        $fatPercentage = 0.25;
+    } 
+    elseif (str_contains($goalLower, 'comer más saludable')) {
+        $proteinPercentage = 0.30;
+        $carbPercentage = 0.40;
+        $fatPercentage = 0.30;
+    } elseif (str_contains($goalLower, 'mejorar rendimiento')) {
+        $proteinPercentage = 0.25;
+        $carbPercentage = 0.50;
+        $fatPercentage = 0.25;
+    } else {
+        $proteinPercentage = 0.30;
+        $carbPercentage = 0.40;
+        $fatPercentage = 0.30;
     }
+
+    $proteinCalories = $calories * $proteinPercentage;
+    $carbCalories = $calories * $carbPercentage;
+    $fatCalories = $calories * $fatPercentage;
+
+    $proteinGrams = $proteinCalories / 4;
+    $carbGrams = $carbCalories / 4;
+    $fatGrams = $fatCalories / 9;
+
+    return [
+        'calories' => round($calories),
+        'protein' => [
+            'grams' => round($proteinGrams),
+            'calories' => round($proteinCalories),
+            'percentage' => round($proteinPercentage * 100, 1),
+            'per_kg' => 0
+        ],
+        'fats' => [
+            'grams' => round($fatGrams),
+            'calories' => round($fatCalories),
+            'percentage' => round($fatPercentage * 100, 1),
+            'per_kg' => 0
+        ],
+        'carbohydrates' => [
+            'grams' => round($carbGrams),
+            'calories' => round($carbCalories),
+            'percentage' => round($carbPercentage * 100, 1),
+            'per_kg' => 0
+        ]
+    ];
+}
     private function adjustCaloriesForGoalFixed($get, $goal): float
-    {
-        $goalLower = strtolower($goal);
+{
+    $goalLower = strtolower($goal);
 
-        if (str_contains($goalLower, 'bajar grasa')) {
-            // 25% déficit fijo (sin progresión mensual)
-            return $get * 0.75;
-        } elseif (str_contains($goalLower, 'aumentar músculo')) {
-            // 15% superávit fijo (sin progresión mensual)
-            return $get * 1.15;
-        } elseif (str_contains($goalLower, 'comer más saludable')) {
-            // 5% déficit para salud general
-            return $get * 0.95;
-        } elseif (str_contains($goalLower, 'mejorar rendimiento')) {
-            // Para rendimiento: mantener o ligero superávit
-            return $get * 1.05;
-        } else {
-            return $get;
-        }
+    if (str_contains($goalLower, 'bajar grasa')) {
+        // ✅ MODIFICACIÓN APLICADA AQUÍ
+        // ANTES: return $get * 0.75;  (25% déficit)
+        // AHORA: return $get * 0.65;  (35% déficit = 10% más agresivo)
+        return $get * 0.65;
+    } elseif (str_contains($goalLower, 'aumentar músculo')) {
+        return $get * 1.15;
+    } elseif (str_contains($goalLower, 'comer más saludable')) {
+        return $get * 0.95;
+    } elseif (str_contains($goalLower, 'mejorar rendimiento')) {
+        return $get * 1.05;
+    } else {
+        return $get;
     }
+}
 
 
     private function validateAnthropometricData($profile): void
@@ -868,31 +908,32 @@ foreach ($planData['nutritionPlan']['meals'] as $mealName => $mealData) {
         }
     }
 
+ 
     private function getExactActivityFactor($weeklyActivity): float
-    {
-        $factorMap = [
-            'No me muevo y no entreno' => 1.20,
-            'Oficina + entreno 1-2 veces' => 1.37,
-            'Oficina + entreno 3-4 veces' => 1.45,
-            'Oficina + entreno 5-6 veces' => 1.55,
-            'Trabajo activo + entreno 1-2 veces' => 1.55,
-            'Trabajo activo + entreno 3-4 veces' => 1.72,
-            'Trabajo muy físico + entreno 5-6 veces' => 1.90
-        ];
+{
+    $factorMap = [
+        'No me muevo y no entreno' => 1.20,
+        'Oficina + entreno 1-2 veces' => 1.37,
+        'Oficina + entreno 3-4 veces' => 1.45,
+        'Oficina + entreno 5-6 veces' => 1.48,  // ✅ ACTUALIZADO
+        'Trabajo activo + entreno 1-2 veces' => 1.48,  // ✅ ACTUALIZADO
+        'Trabajo activo + entreno 3-4 veces' => 1.68,  // ✅ ACTUALIZADO
+        'Trabajo muy físico + entreno 5-6 veces' => 1.80  // ✅ ACTUALIZADO
+    ];
 
-        if (isset($factorMap[$weeklyActivity])) {
-            return $factorMap[$weeklyActivity];
-        }
-
-        foreach ($factorMap as $activity => $factor) {
-            if (str_contains($weeklyActivity, $activity)) {
-                return $factor;
-            }
-        }
-
-        Log::warning("Factor de actividad no encontrado: {$weeklyActivity}. Usando valor por defecto.");
-        return 1.37;
+    if (isset($factorMap[$weeklyActivity])) {
+        return $factorMap[$weeklyActivity];
     }
+
+    foreach ($factorMap as $activity => $factor) {
+        if (str_contains($weeklyActivity, $activity)) {
+            return $factor;
+        }
+    }
+
+    Log::warning("Factor de actividad no encontrado: {$weeklyActivity}. Usando valor por defecto.");
+    return 1.37;
+}
 
     private function adjustCaloriesForGoal($get, $goal, $weight, $weightStatus): float
     {
@@ -2029,6 +2070,35 @@ private function calculateFatPortionByFood($foodName, $targetFats, $isLowBudget 
     - Grasas: {$macros['fats']['grams']}g (tolerancia máxima ±5g)
 - Calorías totales: {$macros['calories']} kcal
 
+
+**REGLA #4: CONTABILIZAR TODO (OBLIGATORIO)**
+- ✅ OBLIGATORIO: Incluir MÍNIMO 100 kcal de vegetales en cada comida principal (Desayuno, Almuerzo, Cena)
+- Las verduras NO son \"libres\", tienen un consumo mínimo obligatorio
+- INCLUYE calorías de salsas y aderezos:
+  * Aceite en ensalada: 10ml = 90 kcal
+  * Salsa de tomate casera: 50ml = 25 kcal
+  * Limón: despreciable
+  * Vinagre balsámico: 15ml = 15 kcal
+  * Mayonesa light: 15g = 30 kcal
+- Rango de vegetales: 100-150 kcal por comida principal
+- SUMA TODOS los componentes (proteína + carbos + grasas + vegetales + salsas) para llegar a los macros objetivo
+
+**PORCIONES DE VEGETALES (100 kcal equivale a):**
+- 2.5 tazas de ensalada mixta con tomate (350g)
+- 2 tazas de vegetales al vapor: brócoli, zanahoria, ejotes (300g)
+- 400g de ensalada verde: lechuga, espinaca, pepino
+- 2 tazas de vegetales salteados con especias (280g)
+
+**IMPORTANTE:** Estos vegetales DEBEN sumarse a los macros totales de la comida.
+
+**REGLA #5: MICRONUTRIENTES OBLIGATORIOS**
+- Fibra: Mínimo 10g por comida principal (objetivo diario: 30-40g total)
+- Vitaminas: Incluir fuentes de vitamina C (cítricos, pimiento), D (pescado, huevo) y hierro (carnes/legumbres)
+- Minerales: Asegurar calcio (lácteos, vegetales verdes), magnesio (frutos secos, semillas) y potasio (plátano, papa, vegetales)
+- Cada comida debe aportar variedad de colores para diferentes fitonutrientes
+- Los vegetales de 100 kcal aportan aproximadamente 6-9g de fibra
+
+
 ⚠️⚠️⚠️ ERROR COMÚN QUE DEBES EVITAR:
 Los planes anteriores FALLARON porque pusieron:
 - ❌ Grasas muy altas (59-65g cuando deberían ser {$macros['fats']['grams']}g)
@@ -2633,34 +2703,96 @@ private function generateDeterministicMealOptions($mealName, $targetProtein, $ta
     }
 
     // DETECTAR SI ES KETO PARA AJUSTAR VEGETALES
-    if (str_contains($dietaryStyle, 'keto')) {
-        $options['Vegetales'] = [
-            'options' => [
-                [
-                    'name' => 'Ensalada LIBRE',
-                    'portion' => 'Sin restricción',
-                    'calories' => 10,
-                    'protein' => 1,
-                    'fats' => 0,
-                    'carbohydrates' => 1
-                ]
+   // Vegetales con MÍNIMO 100 kcal obligatorio
+if (str_contains($dietaryStyle, 'keto')) {
+    $options['Vegetales'] = [
+        'requirement' => 'minimum',
+        'min_calories' => 100,
+        'max_calories' => 150,
+        'recommendation' => 'Consumo mínimo de 100 kcal en vegetales por comida principal',
+        'options' => [
+            [
+                'name' => 'Ensalada verde mixta grande',
+                'portion' => '400g (2 tazas grandes)',
+                'calories' => 100,
+                'protein' => 4,
+                'fats' => 0,
+                'carbohydrates' => 15,
+                'fiber' => 8,
+                'portion_examples' => '2 tazas de lechuga + 1 taza de espinaca + 1/2 taza pepino + 1/4 taza pimiento'
+            ],
+            [
+                'name' => 'Ensalada de vegetales crucíferos',
+                'portion' => '350g (2 tazas)',
+                'calories' => 105,
+                'protein' => 5,
+                'fats' => 0,
+                'carbohydrates' => 16,
+                'fiber' => 9,
+                'portion_examples' => '1 taza brócoli + 1 taza coliflor + 1/2 taza col morada'
+            ],
+            [
+                'name' => 'Mix de vegetales bajos en carbos',
+                'portion' => '380g',
+                'calories' => 110,
+                'protein' => 4,
+                'fats' => 0,
+                'carbohydrates' => 17,
+                'fiber' => 7,
+                'portion_examples' => '1.5 tazas espinaca + 1/2 taza champiñones + 1/2 taza calabacín + tomates cherry'
             ]
-        ];
-    } else {
-        $options['Vegetales'] = [
-            'options' => [
-                [
-                    'name' => 'Ensalada LIBRE',
-                    'portion' => 'Sin restricción',
-                    'calories' => 15,
-                    'protein' => 1,
-                    'fats' => 0,
-                    'carbohydrates' => 3
-                ]
+        ]
+    ];
+} else {
+    $options['Vegetales'] = [
+        'requirement' => 'minimum',
+        'min_calories' => 100,
+        'max_calories' => 150,
+        'recommendation' => 'Consumo mínimo de 100 kcal en vegetales por comida principal',
+        'options' => [
+            [
+                'name' => 'Ensalada completa mixta',
+                'portion' => '350g (2.5 tazas)',
+                'calories' => 100,
+                'protein' => 4,
+                'fats' => 0,
+                'carbohydrates' => 18,
+                'fiber' => 6,
+                'portion_examples' => '2 tazas lechuga mixta + 1 tomate mediano + 1/2 taza zanahoria rallada + 1/4 taza cebolla'
+            ],
+            [
+                'name' => 'Bowl de vegetales al vapor',
+                'portion' => '300g (2 tazas)',
+                'calories' => 110,
+                'protein' => 5,
+                'fats' => 0,
+                'carbohydrates' => 20,
+                'fiber' => 8,
+                'portion_examples' => '1 taza brócoli + 1/2 taza zanahoria + 1/2 taza ejotes + 1/2 taza calabaza'
+            ],
+            [
+                'name' => 'Ensalada mediterránea',
+                'portion' => '320g (2 tazas)',
+                'calories' => 105,
+                'protein' => 4,
+                'fats' => 0,
+                'carbohydrates' => 19,
+                'fiber' => 7,
+                'portion_examples' => '1.5 tazas lechuga + 1 tomate + 1/2 pepino + 1/4 taza pimiento + cebolla morada'
+            ],
+            [
+                'name' => 'Vegetales salteados',
+                'portion' => '280g (2 tazas)',
+                'calories' => 120,
+                'protein' => 5,
+                'fats' => 1,
+                'carbohydrates' => 22,
+                'fiber' => 8,
+                'portion_examples' => '1 taza brócoli + 1/2 taza pimiento + 1/2 taza cebolla + 1/2 taza calabacín'
             ]
-        ];
-    }
-
+        ]
+    ];
+}
     return $options;
 }
 
@@ -4301,6 +4433,87 @@ private function validateRecipeIngredients(array $recipe, array $profileData): b
     return true;
 }
      
+
+/**
+ * Calcular requerimientos de micronutrientes según perfil del usuario
+ */
+private function calculateMicronutrientTargets($basicData): array
+{
+    $sex = strtolower($basicData['sex']);
+    $age = $basicData['age'];
+    $goal = strtolower($basicData['goal']);
+    
+    // Requerimientos base según sexo y edad (basado en RDA/DRI)
+    $fiberTarget = ($sex === 'masculino') ? 38 : 25; // gramos/día
+    $vitaminCTarget = 90; // mg/día
+    $vitaminDTarget = 600; // IU/día
+    $calciumTarget = ($age > 50) ? 1200 : 1000; // mg/día
+    $ironTarget = ($sex === 'masculino') ? 8 : 18; // mg/día (mujeres necesitan más)
+    $magnesiumTarget = ($sex === 'masculino') ? 420 : 320; // mg/día
+    $potassiumTarget = 3400; // mg/día
+    $sodiumMax = 2300; // mg/día (límite máximo)
+    
+    // Ajustes según objetivo específico
+    if (str_contains($goal, 'bajar grasa')) {
+        $fiberTarget += 5; // Más fibra para mayor saciedad
+        $potassiumTarget += 500; // Más potasio para metabolismo
+    } elseif (str_contains($goal, 'aumentar músculo')) {
+        $magnesiumTarget += 100; // Más magnesio para síntesis proteica
+        $vitaminDTarget = 800; // Más vitamina D para fuerza muscular
+    }
+    
+    return [
+        'fiber' => [
+            'target' => $fiberTarget,
+            'unit' => 'g',
+            'importance' => 'critical',
+            'tip' => 'Esencial para saciedad y salud digestiva'
+        ],
+        'vitamin_c' => [
+            'target' => $vitaminCTarget,
+            'unit' => 'mg',
+            'importance' => 'high',
+            'tip' => 'Antioxidante y sistema inmune'
+        ],
+        'vitamin_d' => [
+            'target' => $vitaminDTarget,
+            'unit' => 'IU',
+            'importance' => 'high',
+            'tip' => 'Salud ósea y función muscular'
+        ],
+        'calcium' => [
+            'target' => $calciumTarget,
+            'unit' => 'mg',
+            'importance' => 'high',
+            'tip' => 'Huesos fuertes y contracción muscular'
+        ],
+        'iron' => [
+            'target' => $ironTarget,
+            'unit' => 'mg',
+            'importance' => 'high',
+            'tip' => 'Transporte de oxígeno y energía'
+        ],
+        'magnesium' => [
+            'target' => $magnesiumTarget,
+            'unit' => 'mg',
+            'importance' => 'high',
+            'tip' => 'Función muscular y metabolismo energético'
+        ],
+        'potassium' => [
+            'target' => $potassiumTarget,
+            'unit' => 'mg',
+            'importance' => 'medium',
+            'tip' => 'Balance hídrico y presión arterial'
+        ],
+        'sodium' => [
+            'target' => $sodiumMax,
+            'unit' => 'mg',
+            'importance' => 'limit',
+            'tip' => 'No exceder para evitar retención de líquidos'
+        ]
+    ];
+}
+
 
     private function parseInstructionsToSteps(string $instructions): array
     {
