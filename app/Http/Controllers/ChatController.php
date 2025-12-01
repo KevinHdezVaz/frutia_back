@@ -5,7 +5,8 @@ use Pusher\Pusher;
 use App\Models\User;
 use App\Models\Message;
 use App\Models\ChatSession;
-use App\Models\MealPlan; // Importar el modelo MealPlan
+use App\Models\MealPlan;
+use App\Models\MealLog; // ⭐ NUEVO IMPORT
 
 use Illuminate\Http\Request;
 use App\Services\LumorahAIService;
@@ -13,7 +14,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
- 
+
 class ChatController extends Controller
 {
     protected $lumorahService;
@@ -33,35 +34,77 @@ class ChatController extends Controller
         );
     }
 
-  
+    // ⭐ NUEVO MÉTODO: Obtener historial del día
+    // ⭐ MÉTODO CORREGIDO
+    private function getTodayMealHistory($userId)
+    {
+        $today = now()->format('Y-m-d');
+
+        $logs = MealLog::where('user_id', $userId)
+            ->where('date', $today)
+            ->get();
+
+        if ($logs->isEmpty()) {
+            return null;
+        }
+
+        return $logs->map(function ($log) {
+
+            $selections = collect($log->selections)->map(function ($selection) {
+                return [
+                    'name' => $selection['name'] ?? 'Sin nombre',
+                    'portion' => $selection['portion'] ?? 'Sin porción',
+                    'calories' => $selection['calories'] ?? 0,
+                    'protein' => $selection['protein'] ?? 0,
+                    'carbs' => $selection['carbohydrates'] ?? 0, // ⭐ CAMBIO AQUÍ
+                    'fats' => $selection['fats'] ?? 0,
+                ];
+            });
+
+            $totals = [
+                'calories' => $selections->sum('calories'),
+                'protein' => $selections->sum('protein'),
+                'carbs' => $selections->sum('carbs'),
+                'fats' => $selections->sum('fats'),
+            ];
+
+            return [
+                'meal_type' => $log->meal_type,
+                'selections' => $selections->toArray(),
+                'totals' => $totals,
+            ];
+        })->toArray();
+    }
+
+    // ⭐ MÉTODO ACTUALIZADO: Ahora incluye historial del día
     private function initializeService(Request $request)
     {
         $user = Auth::user();
         $userName = null;
         $mealPlanData = null;
         $userProfile = null;
+        $todayHistory = null; // ⭐ NUEVO
 
         if ($user) {
             $user->load('profile');
-            
-            // --- OPTIMIZACIÓN ---
-            // Usamos directamente el objeto $user que ya tenemos.
-            // La columna en tu base de datos es 'name', no 'nombre'.
-            $userName = $user->name; 
-            $userProfile = $user->profile;
-            // --- FIN OPTIMIZACIÓN ---
 
+            $userName = $user->name;
+            $userProfile = $user->profile;
+
+            // Obtener plan activo
             $mealPlan = MealPlan::where('user_id', $user->id)
                 ->where('is_active', true)
                 ->latest('created_at')
                 ->first();
 
-            // Nos aseguramos de que plan_data sea siempre un array.
             if ($mealPlan && $mealPlan->plan_data) {
-                $mealPlanData = is_array($mealPlan->plan_data) 
-                    ? $mealPlan->plan_data 
+                $mealPlanData = is_array($mealPlan->plan_data)
+                    ? $mealPlan->plan_data
                     : json_decode($mealPlan->plan_data, true);
             }
+
+            // ⭐ NUEVO: Obtener historial del día
+            $todayHistory = $this->getTodayMealHistory($user->id);
         }
 
         if (!$userName && $request->session_id) {
@@ -71,15 +114,23 @@ class ChatController extends Controller
             $userName = $session->user_name ?? null;
         }
 
+        // ⭐ ACTUALIZADO: Crear servicio con historial
         $this->lumorahService = new LumorahAIService(
             $userName,
             $userProfile->language ?? 'es',
             $mealPlanData,
             $userProfile
         );
+
+        // ⭐ NUEVO: Establecer historial del día en el servicio
+        if ($todayHistory) {
+            $this->lumorahService->setTodayHistory($todayHistory);
+            Log::info('Historial del día cargado en el servicio', [
+                'user_id' => $user->id,
+                'meals_logged' => count($todayHistory)
+            ]);
+        }
     }
-    
-    
 
     protected function generateSessionTitle($message)
     {
@@ -191,96 +242,85 @@ class ChatController extends Controller
         }
     }
 
-   
-public function saveChatSession(Request $request)
-{
-    // ▼▼▼ 1. CORREGIR LA VALIDACIÓN ▼▼▼
-    $request->validate([
-        'title' => 'required|string|max:100',
-        'messages' => 'required|array',
-        'messages.*.text' => 'nullable|string', // <-- El texto ahora es opcional
-        'messages.*.image_url' => 'nullable|string|url', // <-- Nuevo campo para la imagen (opcional)
-        'messages.*.is_user' => 'required|boolean',
-        // 'messages.*.created_at' ya no es necesario si lo manejamos aquí
-        'session_id' => 'nullable|exists:chat_sessions,id',
-    ]);
+    public function saveChatSession(Request $request)
+    {
+        $request->validate([
+            'title' => 'required|string|max:100',
+            'messages' => 'required|array',
+            'messages.*.text' => 'nullable|string',
+            'messages.*.image_url' => 'nullable|string|url',
+            'messages.*.is_user' => 'required|boolean',
+            'session_id' => 'nullable|exists:chat_sessions,id',
+        ]);
 
-    DB::beginTransaction();
-    try {
-        $userId = Auth::id();
-        $sessionId = $request->session_id;
+        DB::beginTransaction();
+        try {
+            $userId = Auth::id();
+            $sessionId = $request->session_id;
 
-        if ($sessionId) {
-            $session = ChatSession::where('id', $sessionId)
-                ->where('user_id', $userId)
-                ->firstOrFail();
-            $session->update([
-                'title' => $request->title,
-                'is_saved' => true,
-            ]);
-        } else {
-            $session = ChatSession::create([
-                'user_id' => $userId,
-                'title' => $request->title,
-                'is_saved' => true,
-            ]);
-        }
-
-        // Borramos los mensajes antiguos para resincronizar el chat completo
-        if ($sessionId) {
-            Message::where('chat_session_id', $session->id)->delete();
-        }
-
-        // ▼▼▼ 2. CORREGIR LA LÓGICA DE GUARDADO ▼▼▼
-        foreach ($request->messages as $msg) {
-            // Asegurarse de que al menos uno de los dos (texto o imagen) exista
-            if (empty($msg['text']) && empty($msg['image_url'])) {
-                continue; // Saltar mensajes vacíos
+            if ($sessionId) {
+                $session = ChatSession::where('id', $sessionId)
+                    ->where('user_id', $userId)
+                    ->firstOrFail();
+                $session->update([
+                    'title' => $request->title,
+                    'is_saved' => true,
+                ]);
+            } else {
+                $session = ChatSession::create([
+                    'user_id' => $userId,
+                    'title' => $request->title,
+                    'is_saved' => true,
+                ]);
             }
 
-            Message::create([
-                'chat_session_id' => $session->id,
-                'user_id' => $msg['is_user'] ? $userId : null,
-                'text' => $msg['text'],
-                'image_url' => $msg['image_url'] ?? null, // <-- Guardamos la URL de la imagen
-                'is_user' => $msg['is_user'],
-            ]);
-        }
+            if ($sessionId) {
+                Message::where('chat_session_id', $session->id)->delete();
+            }
 
-        DB::commit();
+            foreach ($request->messages as $msg) {
+                if (empty($msg['text']) && empty($msg['image_url'])) {
+                    continue;
+                }
+
+                Message::create([
+                    'chat_session_id' => $session->id,
+                    'user_id' => $msg['is_user'] ? $userId : null,
+                    'text' => $msg['text'],
+                    'image_url' => $msg['image_url'] ?? null,
+                    'is_user' => $msg['is_user'],
+                ]);
+            }
+
+            DB::commit();
+            return response()->json([
+                'success' => true,
+                'data' => $session->fresh(),
+            ], 201);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error al guardar sesión: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'error' => 'Error al guardar el chat',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function uploadImage(Request $request)
+    {
+        $request->validate([
+            'image' => 'required|image|mimes:jpeg,png,jpg,gif|max:2048',
+        ]);
+
+        $path = $request->file('image')->store('chat_images', 'public');
+
         return response()->json([
             'success' => true,
-            'data' => $session->fresh(), // Devolvemos la sesión actualizada
-        ], 201);
-    } catch (\Exception $e) {
-        DB::rollBack();
-        Log::error('Error al guardar sesión: ' . $e->getMessage());
-        return response()->json([
-            'success' => false,
-            'error' => 'Error al guardar el chat',
-            'message' => $e->getMessage(),
-        ], 500);
+            'url' => asset('storage/' . $path)
+        ]);
     }
-}
-
-// ▼▼▼ AÑADE ESTA FUNCIÓN COMPLETA A TU CHATCONTROLLER.PHP ▼▼▼
-public function uploadImage(Request $request)
-{
-    $request->validate([
-        'image' => 'required|image|mimes:jpeg,png,jpg,gif|max:2048', // Valida que sea una imagen
-    ]);
-
-    // Guarda la imagen en 'storage/app/public/chat_images' y devuelve la ruta
-    $path = $request->file('image')->store('chat_images', 'public');
-
-    // Devuelve la URL completa y pública del archivo
-    return response()->json([
-        'success' => true,
-        'url' => asset('storage/' . $path)
-    ]);
-}
-// ▲▲▲ FIN DE LA FUNCIÓN A AÑADIR ▲▲▲
-
 
     public function getSessionMessages($sessionId)
     {
@@ -298,12 +338,10 @@ public function uploadImage(Request $request)
                         'chat_session_id' => $msg->chat_session_id,
                         'user_id' => $msg->user_id,
                         'text' => $msg->text,
-                        'image_url' => $msg->image_url, // <-- AÑADE ESTA LÍNEA
-
+                        'image_url' => $msg->image_url,
                         'is_user' => $msg->is_user,
                         'created_at' => $msg->created_at->toDateTimeString(),
                         'updated_at' => $msg->updated_at->toDateTimeString(),
-                       
                     ];
                 });
 
@@ -321,9 +359,7 @@ public function uploadImage(Request $request)
         }
     }
 
-   
-   
-
+    // ⭐ MÉTODO ACTUALIZADO: Ahora usa historial del día
     public function sendMessage(Request $request)
     {
         $request->validate([
@@ -333,7 +369,7 @@ public function uploadImage(Request $request)
             'user_name' => 'nullable|string|max:100',
         ]);
 
-        // La inicialización del servicio ahora incluirá el plan de alimentación
+        // ⭐ ESTO YA CARGA EL HISTORIAL AUTOMÁTICAMENTE
         $this->initializeService($request);
 
         try {
@@ -374,7 +410,6 @@ public function uploadImage(Request $request)
                     'user_id' => Auth::id(),
                     'text' => $request->message,
                     'is_user' => true,
-
                 ]);
 
                 Message::create([
@@ -382,18 +417,14 @@ public function uploadImage(Request $request)
                     'user_id' => null,
                     'text' => $aiResponse,
                     'is_user' => false,
-
                 ]);
 
-
-                  // --- UBICACIÓN CORRECTA ---
-                // Justo después de guardar los mensajes y antes de terminar la transacción.
                 $user = Auth::user();
                 if ($user->subscription_status !== 'active') {
                     $user->increment('message_count');
                     Log::info("Incrementado el contador de mensajes para el usuario {$user->id}. Nuevo total: " . ($user->message_count + 1));
                 }
-                
+
                 $this->pusher->trigger('chat-channel', 'new-message', [
                     'session_id' => $sessionId,
                     'message' => $aiResponse,
@@ -401,14 +432,16 @@ public function uploadImage(Request $request)
                 ]);
             });
 
+            // ⭐ NUEVO: Devolver también el contador de mensajes
+            $user = Auth::user();
             return response()->json([
                 'success' => true,
                 'ai_message' => [
                     'text' => $aiResponse,
                     'is_user' => false,
-
                 ],
                 'session_id' => $sessionId,
+                'user_message_count' => $user->message_count, // ⭐ NUEVO
             ], 200);
         } catch (\Exception $e) {
             Log::error('Error en sendMessage: ' . $e->getMessage());
@@ -427,7 +460,6 @@ public function uploadImage(Request $request)
             'user_name' => 'nullable|string',
         ]);
 
-        // La inicialización del servicio ahora incluirá el plan de alimentación
         $this->initializeService($request);
 
         try {
@@ -444,7 +476,6 @@ public function uploadImage(Request $request)
                 'ai_message' => [
                     'text' => $aiResponse,
                     'is_user' => false,
-
                 ],
             ], 200);
         } catch (\Exception $e) {
@@ -468,7 +499,6 @@ public function uploadImage(Request $request)
             'user_name' => 'nullable|string',
         ]);
 
-        // La inicialización del servicio ahora incluirá el plan de alimentación
         $this->initializeService($request);
 
         try {
@@ -493,7 +523,6 @@ public function uploadImage(Request $request)
                 'ai_message' => [
                     'text' => $welcomeMessage,
                     'is_user' => false,
-
                 ],
             ], 200);
         } catch (\Exception $e) {
@@ -509,14 +538,12 @@ public function uploadImage(Request $request)
         }
     }
 
-
     public function updateUserName(Request $request)
     {
         $request->validate([
             'name' => 'required|string|max:100',
         ]);
 
-        // La inicialización del servicio ahora incluirá el plan de alimentación
         $this->initializeService($request);
 
         try {
@@ -533,7 +560,6 @@ public function uploadImage(Request $request)
                 'ai_message' => [
                     'text' => $responseMessage,
                     'is_user' => false,
-
                 ],
             ], 200);
         } catch (\Exception $e) {
@@ -556,9 +582,9 @@ public function uploadImage(Request $request)
 
         try {
             $user = Auth::user();
-            $user->load('profile'); // Asegura que el perfil esté cargado
+            $user->load('profile');
             $userName = $user ? $user->nombre : null;
-            $userProfile = $user->profile; // Asigna el objeto Profile
+            $userProfile = $user->profile;
 
             $mealPlan = MealPlan::where('user_id', $user->id)
                 ->where('is_active', true)
@@ -567,12 +593,20 @@ public function uploadImage(Request $request)
 
             $mealPlanData = $mealPlan ? $mealPlan->plan_data : null;
 
+            // ⭐ NUEVO: Obtener historial para voz también
+            $todayHistory = $this->getTodayMealHistory($user->id);
+
             $voiceService = new LumorahAIService(
                 $userName,
-                $userProfile->language ?? 'es', // Usa el idioma del perfil si está disponible
+                $userProfile->language ?? 'es',
                 $mealPlanData,
-                $userProfile // Pasa el perfil de usuario aquí también
+                $userProfile
             );
+
+            // ⭐ NUEVO: Establecer historial
+            if ($todayHistory) {
+                $voiceService->setTodayHistory($todayHistory);
+            }
 
             $promptData = $voiceService->generateVoicePrompt($request->message);
 

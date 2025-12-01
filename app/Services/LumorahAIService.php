@@ -14,6 +14,7 @@ class LumorahAiService
     private $supportedLanguages = ['es', 'en', 'fr', 'pt'];
     private $mealPlanData = null;
     private $userProfile = null; // Propiedad para almacenar el perfil del usuario
+    private $todayHistory = null; // ⭐ NUEVA PROPIEDAD
 
     public function __construct($userName = null, $language = 'es', $mealPlanData = null, $userProfile = null)
     {
@@ -26,6 +27,13 @@ class LumorahAiService
     {
         $this->userName = $name ? Str::title(trim($name)) : null;
     }
+
+
+      public function setTodayHistory($history)
+    {
+        $this->todayHistory = $history;
+    }
+
 
     public function getWelcomeMessage()
     {
@@ -65,32 +73,32 @@ class LumorahAiService
 {
     $instructions = [
         'body_knowledge' => "El usuario pregunta sobre anatomía o fisiología. Responde de forma precisa y educativa. Ejemplo: 'La piel es el órgano más grande del cuerpo, representando el 16% del peso corporal total. Su salud depende mucho de una buena nutrición e hidratación, como la que estás siguiendo en tu plan.'",
-        
+
         'plan_specific' => "El usuario pregunta específicamente sobre SU PLAN. Actúa como su coach personal. Usa los datos exactos del JSON del plan. Sé específico, usa negritas para destacar números importantes y conecta todo con su objetivo personal. Ejemplo: 'Según tu plan, tienes **2,158 calorías objetivo** distribuidas en **288g proteína, 96g grasas y 36g carbohidratos**. Para tu objetivo de **bajar grasa**, esta distribución es perfecta porque...'",
-        
+
         'nutrition_coaching' => "El usuario necesita coaching nutricional real. Actúa como su entrenador personal. Ofrece soluciones prácticas basadas en su plan y perfil. Sé empático pero firme. Ejemplo: 'Entiendo que tengas antojos, es completamente normal. Tu plan de **2,158 calorías** está diseñado para que no pases hambre. ¿Qué tal si...'",
-        
+
         'body_analysis_inquiry' => "El usuario quiere análisis de imagen corporal. Confirma que sí puedes hacerlo y explica cómo obtener mejores resultados: 'ß¡Por supuesto! Puedo estimar tu porcentaje de grasa corporal. Para el mejor análisis, usa una foto con buena iluminación, de frente, y donde se vea claramente tu torso. ¡Usa el botón de imagen cuando estés listo!'",
-        
+
         'food_inquiry' => "PROCESO OBLIGATORIO:
         1. **SI EL ALIMENTO ESTÁ EN SU PLAN**: Confirma y da detalles específicos: '¡Perfecto! El pollo ya está en tu plan. Para el almuerzo puedes comer **120g (peso crudo)** que son **280 calorías** con **40g de proteína**.'
         2. **SI NO ESTÁ EN SU PLAN**: Calcula calorías y sugiere cómo integrarlo: 'Los makis no están en tu plan, pero 8 piezas (≈400 kcal) podrían reemplazar tu cena de **590 kcal**. Solo ajusta el resto de ingredientes.'",
-        
+
         'general' => "Pregunta general sobre salud/nutrición. Responde con conocimiento experto y conecta con su plan si es posible."
     ];
-    
+
     $baseInstruction = $instructions[$this->detectedTopic] ?? $instructions['general'];
-    
+
     // Agregar contexto del usuario
     $personalContext = $this->buildPersonalContext();
-    
+
     return $baseInstruction . $personalContext;
 }
 
 private function buildPersonalContext()
 {
     $context = '';
-    
+
     if ($this->userProfile) {
         $context .= "\n\n**PERFIL DEL USUARIO:**";
         $context .= "\n- **Nombre**: " . $this->userName;
@@ -98,15 +106,15 @@ private function buildPersonalContext()
         $context .= "\n- **Edad**: " . ($this->userProfile->age ?? 'no especificada');
         $context .= "\n- **Dificultades**: " . (is_array($this->userProfile->diet_difficulties) ? implode(', ', $this->userProfile->diet_difficulties) : $this->userProfile->diet_difficulties ?? 'ninguna');
     }
-    
+
     if ($this->mealPlanData && isset($this->mealPlanData['nutritionPlan'])) {
         $nutrition = $this->mealPlanData['nutritionPlan'];
         $context .= "\n\n**PLAN ACTIVO DEL USUARIO:**";
         $context .= "\n- **Calorías objetivo**: " . ($nutrition['targetMacros']['calories'] ?? 'no definidas') . " kcal";
         $context .= "\n- **Proteína**: " . ($nutrition['targetMacros']['protein'] ?? 0) . "g";
-        $context .= "\n- **Grasas**: " . ($nutrition['targetMacros']['fats'] ?? 0) . "g";  
+        $context .= "\n- **Grasas**: " . ($nutrition['targetMacros']['fats'] ?? 0) . "g";
         $context .= "\n- **Carbohidratos**: " . ($nutrition['targetMacros']['carbohydrates'] ?? 0) . "g";
-        
+
         if (isset($nutrition['meals'])) {
             $context .= "\n\n**COMIDAS DE HOY:**";
             foreach ($nutrition['meals'] as $mealName => $meal) {
@@ -115,25 +123,70 @@ private function buildPersonalContext()
                 $context .= $mealCalories > 0 ? "$mealCalories kcal aprox." : "ver detalles en JSON";
             }
         }
-        
+
         // Agregar JSON completo para consultas específicas
         $context .= "\n\n**JSON COMPLETO DEL PLAN (para consultas específicas):**";
         $context .= "\n```json\n" . json_encode($this->mealPlanData['nutritionPlan'], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n```";
     }
-    
-    return $context;
+      if ($this->todayHistory && count($this->todayHistory) > 0) {
+            $context .= "\n\n**🍽️ COMIDAS REGISTRADAS HOY:**";
+
+            $totalCalories = 0;
+            $totalProtein = 0;
+            $totalCarbs = 0;
+            $totalFats = 0;
+
+            foreach ($this->todayHistory as $log) {
+                $context .= "\n\n**" . $log['meal_type'] . ":**";
+
+                foreach ($log['selections'] as $selection) {
+                    $context .= "\n  • {$selection['name']} ({$selection['portion']}) - {$selection['calories']} kcal, {$selection['protein']}g P, {$selection['carbs']}g C, {$selection['fats']}g G";
+                }
+
+                $context .= "\n  **Totales:** {$log['totals']['calories']} kcal, {$log['totals']['protein']}g P, {$log['totals']['carbs']}g C, {$log['totals']['fats']}g G";
+
+                $totalCalories += $log['totals']['calories'];
+                $totalProtein += $log['totals']['protein'];
+                $totalCarbs += $log['totals']['carbs'];
+                $totalFats += $log['totals']['fats'];
+            }
+
+            // Calcular lo que le queda
+            if ($this->mealPlanData && isset($this->mealPlanData['nutritionPlan']['targetMacros'])) {
+                $target = $this->mealPlanData['nutritionPlan']['targetMacros'];
+                $remaining = [
+                    'calories' => $target['calories'] - $totalCalories,
+                    'protein' => $target['protein'] - $totalProtein,
+                    'carbs' => $target['carbohydrates'] - $totalCarbs,
+                    'fats' => $target['fats'] - $totalFats,
+                ];
+
+                $context .= "\n\n**📊 RESUMEN DEL DÍA:**";
+                $context .= "\n- **Consumido**: {$totalCalories} kcal ({$totalProtein}g P, {$totalCarbs}g C, {$totalFats}g G)";
+                $context .= "\n- **Restante**: {$remaining['calories']} kcal ({$remaining['protein']}g P, {$remaining['carbs']}g C, {$remaining['fats']}g G)";
+
+                // ⭐ Calcular porcentaje del día
+                $percentConsumed = round(($totalCalories / $target['calories']) * 100, 1);
+                $context .= "\n- **Progreso**: {$percentConsumed}% del objetivo diario";
+            }
+        } else {
+            $context .= "\n\n**🍽️ COMIDAS REGISTRADAS HOY:** Ninguna todavía.";
+        }
+
+        return $context;
+
 }
 
 private function calculateMealCalories(array $meal): int
 {
     $totalCalories = 0;
-    
+
     // Buscar en la estructura correcta
     if (isset($meal['Proteínas']['options'][0]['calories'])) {
         $totalCalories += (int)$meal['Proteínas']['options'][0]['calories'];
     }
     if (isset($meal['Carbohidratos']['options'][0]['calories'])) {
-        $totalCalories += (int)$meal['Carbohidratos']['options'][0]['calories'];  
+        $totalCalories += (int)$meal['Carbohidratos']['options'][0]['calories'];
     }
     if (isset($meal['Grasas']['options'][0]['calories'])) {
         $totalCalories += (int)$meal['Grasas']['options'][0]['calories'];
@@ -141,10 +194,10 @@ private function calculateMealCalories(array $meal): int
     if (isset($meal['Vegetales']['options'][0]['calories'])) {
         $totalCalories += (int)$meal['Vegetales']['options'][0]['calories'];
     }
-    
+
     return $totalCalories;
 }
- 
+
     private function containsAny($text, $keywords)
     {
         foreach ($keywords as $keyword) {
@@ -202,8 +255,8 @@ private function calculateMealCalories(array $meal): int
             ])->post('https://api.openai.com/v1/chat/completions', [
                 'model' => 'gpt-4o-mini',
                 'messages' => $messages,
-             'max_tokens' => 150, // Limitar longitud
-            'temperature' => 0.5, // Menos creatividad, más precisión
+                'max_tokens' => 1500, // ⭐ CAMBIO PRINCIPAL
+                'temperature' => 0.5, // Menos creatividad, más precisión
             'frequency_penalty' => 0.5, // Reduce repeticiones
             'presence_penalty' => 0.5, // Evita divagaciones
             ]);
@@ -221,20 +274,20 @@ private function calculateMealCalories(array $meal): int
         }
     }
 
-  
+
    // En el archivo: app/Services/LumorahAiService.php
 
    public function analyzeBodyImage($base64Image, $userText = null) // Aceptamos el texto opcional
    {
-    
+
        // Creamos un prompt base
        $prompt = "Analiza la imagen de este cuerpo y devuelve estrictamente un objeto JSON con tres claves: 'percentage' (un número para el % de grasa estimado), 'recommendation' (un string con una frase concisa), y 'observations' (un array de 2-3 strings con características clave).";
-   
+
        // Si el usuario envió un texto, lo añadimos al prompt
        if (!empty($userText)) {
            $prompt .= " Además, responde a esta pregunta específica del usuario: '{$userText}'";
        }
-   
+
        $requestPayload = [
            'model' => 'gpt-4o',
            'messages' => [
@@ -259,7 +312,7 @@ private function calculateMealCalories(array $meal): int
            'response_format' => ['type' => 'json_object'],
        ];
 
-   
+
 
     try {
         $response = Http::withHeaders([
@@ -303,7 +356,7 @@ private function buildSystemPrompt($userName)
 {
     $name = $userName ? ", $userName" : "";
     $topicAndProfileInstructions = $this->getTopicInstructions();
-    
+
     return <<<PROMPT
 # ERES FRUTIA - COACH NUTRICIONAL PERSONAL DE{$name}
 
@@ -320,7 +373,7 @@ private function buildSystemPrompt($userName)
 - No digas "generalmente" o "suele ser", di "TU plan indica..."
 - Usa negritas para destacar números importantes de SU plan
 
-### 2. CONOCIMIENTO CORPORAL Y FISIOLÓGICO  
+### 2. CONOCIMIENTO CORPORAL Y FISIOLÓGICO
 - Para preguntas de anatomía/fisiología, responde con precisión científica
 - Después conecta con la importancia de la nutrición personalizada
 
@@ -348,12 +401,12 @@ Responde como el coach personal de {$userName}, usando todos estos datos especí
 PROMPT;
 }
 
-    
+
     private function buildSystemVoicePrompt($userName)
     {
         return $this->buildSystemPrompt($userName);
     }
-    
+
 
     public function getDefaultResponse() { /* ... tu código ... */ return "¡Uy! Parece que se me cayó una manzana en el sistema 🍎. Hubo un pequeño error, pero ¿podrías repetirme tu pregunta?"; }
     private function getPersonalizedGreeting($userName, $emoji) { /* ... tu código ... */ return "Hola $userName, soy Frutia $emoji"; }

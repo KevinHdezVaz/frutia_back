@@ -17,27 +17,27 @@
     use App\Http\Controllers\BodyAnalysisController;
     use App\Http\Controllers\MealPlanController;
 
-    
+
 
     Route::post('/register', [AuthController::class, 'register']);
     Route::post('/login', [AuthController::class, 'login']);
     Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
     Route::post('/reset-password', [AuthController::class, 'resetPassword']);
     Route::post('/google-login', [AuthController::class, 'googleLogin']);
-    
+
     Route::post('/webhooks/mercadopago', [WebhookController::class, 'handleMercadoPago']);
 
     Route::get('/plans', [PaymentController::class, 'getPlans']);
 
-        
+
     // Rutas de Google
     Route::get('/auth/google', [AuthController::class, 'redirectToGoogle']);
     Route::get('/auth/google/callback', [AuthController::class, 'handleGoogleCallback']);
     Route::post('login/google', [AuthController::class, 'loginWithGoogle']);
 
-    
+
     Route::middleware('auth:sanctum')->group(function () {
-        
+
         Route::post('/body-analysis', [BodyAnalysisController::class, 'analyze']);
 
 
@@ -53,8 +53,10 @@
         Route::get('/statistics', [MealPlanController::class, 'getPlanStatistics']);
         Route::post('/regenerate', [MealPlanController::class, 'regeneratePlan']);
         Route::get('/history', [MealPlanController::class, 'getPlanHistory']);
+              Route::get('/history/today', [MealLogController::class, 'getTodayHistory']); // ⭐ AQUÍ
+
     });
-    
+
         Route::get('/user/name', [AuthController::class, 'getUserName']);
         // Ruta para actualizar el OneSignal Player ID
         Route::post('/user/update-onesignal-id', function (Request $request) {
@@ -73,15 +75,15 @@
             return response()->json(['message' => 'Perfil de usuario no encontrado.'], 404);
         });
 
-        
-    
-        
+
+
+
 
         Route::post('/payment/create-preference', [PaymentController::class, 'createPreference']);
 
- 
+
         Route::get('/profile', [AuthController::class, 'profile']);
-        
+
         // Ruta para cerrar sesión.
         Route::post('/logout', [AuthController::class, 'logout']);
         Route::post('/profile', [ProfileController::class, 'storeOrUpdate']);
@@ -94,17 +96,17 @@
 
         Route::get('/plan/ingredients', [PlanController::class, 'getIngredientsList']);
 
-    
+
         Route::post('/streak/complete-day', [StreakController::class, 'marcarDiaCompleto']);
 
         Route::post('/summarize', [ChatController::class, 'summarizeConversation']);
 
         Route::post('/update-name', [ChatController::class, 'updateUserName']);
-    
+
         Route::get('/ingredient-image/{name}', [IngredientController::class, 'showImage'])->middleware('auth:sanctum');
 
-    
-        
+
+
         Route::prefix('chat')->group(function () {
             Route::post('/upload-image', [ChatController::class, 'uploadImage']);
 
@@ -120,6 +122,6 @@
         Route::post('/send-temporary-message', [ChatController::class, 'sendTemporaryMessage']);
         Route::post('/start-new-session', [ChatController::class, 'startNewSession']);
     });
-    
-        
+
+
     });
