@@ -308,6 +308,52 @@ class ChatController extends Controller
         }
     }
 
+
+    // ⭐ NUEVO MÉTODO: Marcar sesión como guardada sin tocar mensajes
+    public function markSessionAsSaved($sessionId, Request $request)
+    {
+        $request->validate([
+            'title' => 'required|string|max:100',
+            'is_saved' => 'required|boolean',
+        ]);
+
+        try {
+            $session = ChatSession::where('id', $sessionId)
+                ->where('user_id', Auth::id())
+                ->firstOrFail();
+
+            $session->update([
+                'title' => $request->title,
+                'is_saved' => $request->is_saved,
+            ]);
+
+            Log::info('✅ Sesión marcada como guardada', [
+                'session_id' => $sessionId,
+                'title' => $request->title,
+                'user_id' => Auth::id()
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Sesión marcada como guardada',
+                'data' => $session,
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('❌ Error al marcar sesión como guardada', [
+                'error' => $e->getMessage(),
+                'session_id' => $sessionId,
+                'user_id' => Auth::id()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Error al marcar la sesión',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+
     public function uploadImage(Request $request)
     {
         $request->validate([
@@ -360,6 +406,8 @@ class ChatController extends Controller
     }
 
     // ⭐ MÉTODO ACTUALIZADO: Ahora usa historial del día
+    // En ChatController.php, método sendMessage()
+
     public function sendMessage(Request $request)
     {
         $request->validate([
@@ -369,7 +417,6 @@ class ChatController extends Controller
             'user_name' => 'nullable|string|max:100',
         ]);
 
-        // ⭐ ESTO YA CARGA EL HISTORIAL AUTOMÁTICAMENTE
         $this->initializeService($request);
 
         try {
@@ -380,7 +427,11 @@ class ChatController extends Controller
                 $contextMessages = $this->getConversationContext($request->session_id);
             }
 
-            $aiResponse = $this->lumorahService->callOpenAI($request->message, $promptData['system_prompt'], $contextMessages);
+            $aiResponse = $this->lumorahService->callOpenAI(
+                $request->message,
+                $promptData['system_prompt'],
+                $contextMessages
+            );
 
             if (!is_string($aiResponse) || empty($aiResponse)) {
                 Log::warning('Respuesta de OpenAI inválida, usando mensaje por defecto.');
@@ -400,49 +451,92 @@ class ChatController extends Controller
                 ], 200);
             }
 
-            DB::transaction(function () use ($request, $aiResponse, &$sessionId, $promptData) {
+            // ⭐ CAMBIO AQUÍ: Usar DB::transaction para garantizar que se guarden los mensajes
+            DB::beginTransaction(); // ⬅️ MOVER AQUÍ
+
+            try {
+                // Si no hay sesión, crear una
                 if (!$sessionId) {
                     $sessionId = $this->createNewSession($request->message);
                 }
 
-                Message::create([
+                // ⭐ GUARDAR MENSAJE DEL USUARIO
+                $userMessage = Message::create([
                     'chat_session_id' => $sessionId,
                     'user_id' => Auth::id(),
                     'text' => $request->message,
+                    'image_url' => null, // Por si envías imagen después
                     'is_user' => true,
                 ]);
 
-                Message::create([
+                Log::info('✅ Mensaje del usuario guardado', [
+                    'message_id' => $userMessage->id,
+                    'session_id' => $sessionId,
+                    'user_id' => Auth::id()
+                ]);
+
+                // ⭐ GUARDAR RESPUESTA DE LA IA
+                $aiMessage = Message::create([
                     'chat_session_id' => $sessionId,
-                    'user_id' => null,
+                    'user_id' => null, // NULL porque es la IA
                     'text' => $aiResponse,
+                    'image_url' => null,
                     'is_user' => false,
                 ]);
 
+                Log::info('✅ Mensaje de la IA guardado', [
+                    'message_id' => $aiMessage->id,
+                    'session_id' => $sessionId
+                ]);
+
+                // Incrementar contador de mensajes
                 $user = Auth::user();
                 if ($user->subscription_status !== 'active') {
                     $user->increment('message_count');
-                    Log::info("Incrementado el contador de mensajes para el usuario {$user->id}. Nuevo total: " . ($user->message_count + 1));
+                    Log::info("Incrementado el contador de mensajes para el usuario {$user->id}. Nuevo total: {$user->message_count}");
                 }
 
+                // Notificar por Pusher (opcional)
                 $this->pusher->trigger('chat-channel', 'new-message', [
                     'session_id' => $sessionId,
                     'message' => $aiResponse,
                     'is_user' => false,
                 ]);
-            });
 
-            // ⭐ NUEVO: Devolver también el contador de mensajes
-            $user = Auth::user();
-            return response()->json([
-                'success' => true,
-                'ai_message' => [
-                    'text' => $aiResponse,
-                    'is_user' => false,
-                ],
-                'session_id' => $sessionId,
-                'user_message_count' => $user->message_count, // ⭐ NUEVO
-            ], 200);
+                DB::commit(); // ⬅️ CONFIRMAR TRANSACCIÓN
+
+                Log::info('✅ Transacción completada exitosamente', [
+                    'session_id' => $sessionId,
+                    'total_messages' => Message::where('chat_session_id', $sessionId)->count()
+                ]);
+
+                $user = Auth::user();
+                return response()->json([
+                    'success' => true,
+                    'ai_message' => [
+                        'text' => $aiResponse,
+                        'is_user' => false,
+                        'id' => $aiMessage->id, // ⭐ NUEVO: Devolver ID del mensaje
+                    ],
+                    'user_message' => [ // ⭐ NUEVO: Devolver info del mensaje del usuario
+                        'id' => $userMessage->id,
+                        'text' => $request->message,
+                        'is_user' => true,
+                    ],
+                    'session_id' => $sessionId,
+                    'user_message_count' => $user->message_count,
+                ], 200);
+
+            } catch (\Exception $e) {
+                DB::rollBack(); // ⬅️ REVERTIR SI HAY ERROR
+                Log::error('❌ Error en la transacción de mensajes', [
+                    'error' => $e->getMessage(),
+                    'session_id' => $sessionId,
+                    'user_id' => Auth::id()
+                ]);
+                throw $e;
+            }
+
         } catch (\Exception $e) {
             Log::error('Error en sendMessage: ' . $e->getMessage());
             return response()->json([
@@ -453,7 +547,7 @@ class ChatController extends Controller
         }
     }
 
-    public function sendTemporaryMessage(Request $request)
+        public function sendTemporaryMessage(Request $request)
     {
         $request->validate([
             'message' => 'required|string',

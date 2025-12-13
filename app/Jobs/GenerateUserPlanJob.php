@@ -33,7 +33,7 @@ class GenerateUserPlanJob implements ShouldQueue
         ],
         'proteinas' => [
             'bajo' => [
-                'desayuno' => ['Huevo entero', 'Claras de huevo'],
+                'desayuno' => ['Huevo entero', 'Claras + Huevo Entero'],
                 'almuerzo_cena' => ['Pechuga de pollo', 'Carne molida 93% magra', 'Atún en lata', 'Pescado blanco'],
                 'snacks' => ['Yogurt griego']
             ],
@@ -123,6 +123,7 @@ class GenerateUserPlanJob implements ShouldQueue
             // PASO 5: Despachar jobs de enriquecimiento
             Log::info('Despachando jobs de enriquecimiento.', ['mealPlanId' => $mealPlan->id]);
             EnrichPlanWithPricesJob::dispatch($mealPlan->id);
+            GenerateRecipeImagesJob::dispatch($mealPlan->id)->onQueue('images');
 
             Log::info('Plan ULTRA-PERSONALIZADO generado exitosamente.', ['userId' => $user->id, 'mealPlanId' => $mealPlan->id]);
         } catch (\Exception $e) {
@@ -511,7 +512,7 @@ private function validateGeneratedPlan($planData, $nutritionalData): array
             'salmón',
             'salmon',
             'pechuga de pollo',
-            'claras de huevo',
+            'Claras + Huevo Entero',
             'yogurt griego',
             'yogur griego',
             'proteína',
@@ -885,7 +886,7 @@ private function areNamesEquivalent(string $name1, string $name2): bool
         'pollo pechuga' => 'pechuga de pollo',
         'atun' => 'atun en lata',
         'mani' => 'mantequilla de mani',
-        'claras' => 'claras de huevo',
+        'claras' => 'Claras + Huevo Entero',
         'yogurt' => 'yogur',
     ];
 
@@ -1320,7 +1321,7 @@ private function calculateProteinPortionByFood($foodName, $targetProtein, $isLow
             'carbs' => 0,
             'weigh_raw' => true
         ],
-        'Claras de huevo' => [
+        'Claras + Huevo Entero' => [
             'protein' => 11,
             'calories' => 52,
             'fats' => 0,
@@ -1915,8 +1916,8 @@ if (str_contains(strtolower($basicData['goal']), 'bajar grasa')) {
     " . ($budgetType === 'ALTO' ? "
     ✅ OBLIGATORIO usar ESTOS alimentos premium:
     PROTEÍNAS DESAYUNO: Claras + Huevo Entero, Yogurt griego, Proteína whey
-    PROTEÍNAS ALMUERZO/CENA: Pechuga de pollo, Salmón fresco, Atún fresco, Carne magra de res
-    CARBOHIDRATOS: Quinua, Avena orgánica, Pan integral artesanal, Camote, Arroz integral
+    PROTEÍNAS ALMUERZO/CENA: Pechuga de pollo, Salmón fresco, Atún fresco, Carne de res magra
+    CARBOHIDRATOS: Quinua, Avena orgánica, Pan integral artesanal, Camote, arroz blanco
     GRASAS: Aceite de oliva extra virgen, Almendras, Nueces, Aguacate hass
 
     ❌ PROHIBIDO usar: Huevo entero, Pollo muslo, Atún en lata, Aceite vegetal, Maní, Arroz blanco, Pan de molde
@@ -2196,8 +2197,8 @@ Si tus cálculos dan DIFERENTE, revisa tu matemática ANTES de responder.
     {
         if ($budgetType === 'ALTO') {
             return [
-                'proteinas' => ['Claras de huevo', 'Yogurt griego', 'Proteína whey', 'Pechuga de pollo', 'Salmón', 'Atún fresco'],
-                'carbohidratos' => ['Quinua', 'Avena orgánica', 'Pan integral artesanal', 'Camote', 'Arroz integral'],
+                'proteinas' => ['Claras + Huevo Entero', 'Yogurt griego', 'Proteína whey', 'Pechuga de pollo', 'Salmón', 'Atún fresco'],
+                'carbohidratos' => ['Quinua', 'Avena orgánica', 'Pan integral artesanal', 'Camote', 'arroz blanco'],
                 'grasas' => ['Aceite de oliva extra virgen', 'Almendras', 'Nueces', 'Aguacate hass']
             ];
         } else {
@@ -2457,7 +2458,7 @@ private function generateDeterministicPlan($nutritionalData, $profile, $userName
     // LÍNEA ~1241 - Nuevos métodos auxiliares
     private function isEggProduct($foodName): bool
     {
-        $eggProducts = ['huevo entero', 'huevos', 'claras de huevo', 'claras pasteurizadas', 'huevo', 'clara'];
+        $eggProducts = ['huevo entero', 'huevos', 'Claras + Huevo Entero', 'claras pasteurizadas', 'huevo', 'clara'];
         $nameLower = strtolower($foodName);
         foreach ($eggProducts as $egg) {
             if (str_contains($nameLower, $egg)) {
@@ -3471,7 +3472,7 @@ private function applyFoodPreferenceSystem($foodList, $mealType, $dislikedFoods,
             'caseina' => ['caseina', 'proteina en polvo', 'proteina'],
             'whey' => ['whey', 'proteina whey', 'proteina en polvo'],
             'yogurt griego' => ['yogurt griego', 'yogur griego', 'yogurt griego alto en proteinas'],
-            'claras' => ['claras de huevo', 'claras pasteurizadas', 'clara de huevo'],
+            'claras' => ['Claras + Huevo Entero', 'claras pasteurizadas', 'clara de huevo'],
         ];
 
         foreach ($proteinEquivalences as $key => $variants) {
@@ -3514,7 +3515,7 @@ private function calculateCarbPortionByFood($foodName, $targetCarbs): ?array
         'Crema de arroz' => ['protein' => 6, 'carbs' => 80, 'fats' => 1, 'calories' => 360, 'weigh_raw' => true],
         'Cereal de maíz' => ['protein' => 7, 'carbs' => 84, 'fats' => 3, 'calories' => 380, 'weigh_raw' => true],
         'Pan integral artesanal' => ['protein' => 10, 'carbs' => 45, 'fats' => 5, 'calories' => 270, 'weigh_raw' => false, 'unit' => 'rebanada', 'unit_weight' => 35],
-        'Arroz integral' => ['protein' => 2.6, 'carbs' => 23, 'fats' => 0.9, 'calories' => 111, 'weigh_raw' => false],
+        'arroz blanco' => ['protein' => 2.6, 'carbs' => 23, 'fats' => 0.9, 'calories' => 111, 'weigh_raw' => false],
     ];
 
     $nutrition = $nutritionMap[$foodName] ?? null;
@@ -4073,7 +4074,7 @@ private function calculateCarbPortionByFood($foodName, $targetCarbs): ?array
             **CARBOHIDRATOS GOURMET:**
             - Quinua (superfood andino)
             - Avena orgánica
-            - Arroz integral/basmati
+            - arroz blanco/basmati
             - Camote morado
             - Pan artesanal/integral premium
             - Pasta integral o de legumbres
@@ -4299,7 +4300,7 @@ private function calculateCarbPortionByFood($foodName, $targetCarbs): ?array
         if (str_contains($budget, 'bajo')) {
             $proteinOptions = ['Huevo entero', 'Pollo muslo', 'Atún en lata', 'Frijoles'];
         } else {
-            $proteinOptions = ['Pechuga de pollo', 'Salmón', 'Claras de huevo', 'Yogurt griego'];
+            $proteinOptions = ['Pechuga de pollo', 'Salmón', 'Claras + Huevo Entero', 'Yogurt griego'];
         }
     }
 
@@ -4997,7 +4998,7 @@ private function buildFavoritesPromptSection(array $foodPreferences, string $use
 
             // Carbohidratos
             'Papa' => ['Papa'],
-            'Arroz' => ['Arroz blanco', 'Arroz integral'],
+            'Arroz' => ['Arroz blanco', 'arroz blanco'],
             'Camote' => ['Camote'],
             'Quinua' => ['Quinua'],
             'Avena' => ['Avena orgánica', 'Avena tradicional', 'Avena'],

@@ -77,6 +77,7 @@
 
 
 
+        Route::put('chat/sessions/{sessionId}/mark-saved', [ChatController::class, 'markSessionAsSaved']);
 
 
         Route::post('/payment/create-preference', [PaymentController::class, 'createPreference']);
