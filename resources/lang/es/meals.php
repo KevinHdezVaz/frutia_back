@@ -1,0 +1,202 @@
+<?php
+
+return [
+    // ========== NOMBRES DE COMIDAS ==========
+    'breakfast' => 'Desayuno',
+    'lunch' => 'Almuerzo',
+    'dinner' => 'Cena',
+    'snack_am' => 'Snack AM',
+    'snack_pm' => 'Snack PM',
+    'snack' => 'Snack',
+
+    // ========== CATEGORÍAS ==========
+    'proteins' => 'Proteínas',
+    'carbohydrates' => 'Carbohidratos',
+    'fats' => 'Grasas',
+    'vegetables' => 'Vegetales',
+    'fruits' => 'Frutas',
+
+    // ========== UNIDADES ==========
+    'unit' => 'unidad',
+    'units' => 'unidades',
+    'mix' => 'mezcla',
+    'mixes' => 'mezclas',
+    'slice' => 'rebanada',
+    'slices' => 'rebanadas',
+    'tortilla' => 'tortilla',
+    'tortillas' => 'tortillas',
+    'tablespoon' => 'cucharada',
+    'tablespoons' => 'cucharadas',
+    'teaspoon' => 'cucharadita',
+    'teaspoons' => 'cucharaditas',
+    'cup' => 'taza',
+    'cups' => 'tazas',
+    'glass' => 'vaso',
+    'glasses' => 'vasos',
+
+    // ========== DESCRIPCIONES DE PESO ==========
+    'raw_weight' => '(peso en crudo)',
+    'cooked_weight' => '(peso cocido)',
+    'dry_weight' => '(peso en seco)',
+
+    // ========== PROTEÍNAS ==========
+    'whole_egg' => 'Huevo entero',
+    'canned_tuna' => 'Atún en lata',
+    'chicken_thigh' => 'Pollo muslo',
+    'ground_beef' => 'Carne molida',
+    'greek_yogurt' => 'Yogurt griego',
+    'egg_whites_whole_egg' => 'Claras + Huevo entero',
+    'high_protein_greek_yogurt' => 'Yogurt griego alto en proteínas',
+    'whey_protein' => 'Proteína whey',
+    'chicken_breast' => 'Pechuga de pollo',
+    'fresh_salmon' => 'Salmón fresco',
+    'lean_beef' => 'Carne de res magra',
+    'protein_powder' => 'Proteína en polvo',
+    'casein' => 'Caseína',
+    'white_fish' => 'Pescado blanco',
+    'turkey_breast' => 'Pechuga de pavo',
+    'pasteurized_egg_whites' => 'Claras pasteurizadas',
+    'whole_eggs' => 'Huevos enteros',
+    'eggs_scrambled' => 'Huevos revueltos',
+
+    // ========== CARBOHIDRATOS ==========
+    'potato' => 'Papa',
+    'white_rice' => 'Arroz blanco',
+    'sweet_potato' => 'Camote',
+    'pasta' => 'Fideo',
+    'beans' => 'Frijoles',
+    'quinoa' => 'Quinua',
+    'whole_wheat_bread' => 'Pan integral',
+    'corn_tortilla' => 'Tortilla de maíz',
+    'rice_cakes' => 'Galletas de arroz',
+    'oats' => 'Avena',
+    'organic_oats' => 'Avena orgánica',
+    'traditional_oats' => 'Avena tradicional',
+    'cream_of_rice' => 'Crema de arroz',
+    'corn_cereal' => 'Cereal de maíz',
+    'artisan_whole_wheat_bread' => 'Pan integral artesanal',
+    'sliced_bread' => 'Pan de molde',
+    'whole_wheat_pasta' => 'Pasta integral',
+    'lentils' => 'Lentejas',
+    'cooked_lentils' => 'Lentejas cocidas',
+    'cooked_quinoa' => 'Quinua cocida',
+    'black_beans_cooked' => 'Frijoles negros cocidos',
+    'chickpeas_cooked' => 'Garbanzos cocidos',
+
+    // ========== GRASAS ==========
+    'olive_oil' => 'Aceite de oliva',
+    'peanuts' => 'Maní',
+    'avocado' => 'Aguacate',
+    'homemade_peanut_butter' => 'Mantequilla de maní casera',
+    'extra_virgin_olive_oil' => 'Aceite de oliva extra virgen',
+    'almonds' => 'Almendras',
+    'hass_avocado' => 'Aguacate hass',
+    'walnuts' => 'Nueces',
+    'peanut_butter' => 'Mantequilla de maní',
+    'organic_chia_seeds' => 'Semillas de chía orgánicas',
+    'pistachios' => 'Pistachos',
+    'vegetable_oil' => 'Aceite vegetal',
+    'honey' => 'Miel',
+    'dark_chocolate_70' => 'Chocolate negro 70%',
+
+    // ========== VEGETALES ==========
+    'mixed_vegetables' => 'Vegetales mixtos',
+    'mixed_salad' => 'Ensalada mixta',
+    'broccoli' => 'Brócoli',
+    'spinach' => 'Espinaca',
+    'carrot' => 'Zanahoria',
+    'tomato' => 'Tomate',
+    'cucumber' => 'Pepino',
+    'lettuce' => 'Lechuga',
+    'steamed_broccoli' => 'Brócoli al vapor',
+    'sauteed_spinach' => 'Espinacas salteadas',
+    'complete_mixed_salad' => 'Ensalada completa mixta',
+    'steamed_vegetables_bowl' => 'Bowl de vegetales al vapor',
+    'mediterranean_salad' => 'Ensalada mediterránea',
+    'sauteed_vegetables' => 'Vegetales salteados',
+    'green_mixed_salad_large' => 'Ensalada verde mixta grande',
+    'cruciferous_salad' => 'Ensalada de vegetales crucíferos',
+    'low_carb_vegetables_mix' => 'Mix de vegetales bajos en carbos',
+
+    // ========== FRUTAS ==========
+    'fruits' => 'Frutas',
+    'apple' => 'Manzana',
+    'banana' => 'Plátano',
+    'orange' => 'Naranja',
+    'strawberry' => 'Fresa',
+    'mango' => 'Mango',
+    'pineapple' => 'Piña',
+
+    // ========== OTROS ALIMENTOS ==========
+    'firm_tofu' => 'Tofu firme',
+    'tempeh' => 'Tempeh',
+    'seitan' => 'Seitán',
+    'fresh_cheese' => 'Queso fresco',
+    'cottage_cheese' => 'Queso cottage',
+    'natural_yogurt' => 'Yogurt natural',
+    'panela_cheese_grilled' => 'Queso panela a la plancha',
+    'oaxaca_cheese' => 'Queso Oaxaca',
+    'ricotta_with_herbs' => 'Ricotta con hierbas',
+    'lentil_burger' => 'Hamburguesa de lentejas',
+    'plant_protein_powder' => 'Proteína vegetal en polvo',
+    'greek_yogurt_with_granola' => 'Yogurt griego con granola proteica',
+
+    // ========== KETO ==========
+    'chicken_thigh_with_skin' => 'Pollo muslo con piel',
+    'ground_beef_80_20' => 'Carne molida 80/20',
+    'salmon' => 'Salmón',
+    'ribeye' => 'Ribeye',
+    'duck_breast' => 'Pechuga de pato',
+    'lard' => 'Manteca de cerdo',
+    'butter' => 'Mantequilla',
+    'mct_oil' => 'Aceite MCT',
+    'ghee_butter' => 'Mantequilla ghee',
+
+    // ========== MENSAJES Y VALIDACIONES ==========
+    'invalid_plan_structure' => 'El plan generado no tiene una estructura válida',
+    'high_budget_food_in_low_plan' => 'Alimento de presupuesto alto ":food" encontrado en :meal (plan bajo)',
+    'low_budget_food_in_high_plan' => 'Alimento de presupuesto bajo ":food" encontrado en :meal (plan alto)',
+    'eggs_multiple_meals' => 'Huevos aparecen en múltiples comidas: :meals (máximo 1 comida)',
+    'allergen_critical' => '¡ALERGIA CRÍTICA! ":food" contiene ":allergen" en :meal - :category',
+    'quinoa_breakfast_error' => 'Quinua no está permitida en el desayuno',
+    'less_preferred_first' => 'Alimento menos preferido ":food" aparece primero en :meal - :category',
+    'must_be_cooked' => '":food" debe indicar peso cocido, no crudo',
+    'must_be_raw' => '":food" debe indicar peso en seco/crudo, no cocido',
+    'vegetables_low_calories' => 'Vegetales en :meal tienen muy pocas calorías (:calories kcal, mínimo 100)',
+    'vegetables_high_calories' => 'Vegetales en :meal tienen demasiadas calorías (:calories kcal, máximo 150)',
+    'vegetables_missing' => 'Faltan vegetales en :meal',
+    'protein_out_of_range' => 'Proteínas fuera de rango: objetivo :target g, obtenido :obtained g (diferencia: :diff g)',
+    'carbs_out_of_range' => 'Carbohidratos fuera de rango: objetivo :target g, obtenido :obtained g (diferencia: :diff g)',
+    'fats_out_of_range' => 'Grasas fuera de rango: objetivo :target g, obtenido :obtained g (diferencia: :diff g)',
+    'fiber_low' => 'Fibra baja: :current g (objetivo: :target g)',
+    'meal_unbalanced' => 'Comida :meal desbalanceada: esperado :expected kcal, actual :actual kcal',
+
+    // ========== DESCRIPCIONES DE PORCIONES ==========
+    'egg_whites_portion' => ':whites claras + :whole huevo:plural_whole entero:plural_entero',
+    'portion_examples' => 'Ejemplo de porción',
+
+    // ========== RECOMENDACIONES ==========
+    'hydration_recommendation' => 'Hidratación: consume al menos 2 litros de agua al día',
+    'main_meals_mandatory' => 'Las 3 comidas principales son obligatorias: Desayuno, Almuerzo y Cena',
+    'snack_timing_am' => 'Tu snack es para media mañana',
+    'snack_timing_pm' => 'Tu snack es para media tarde',
+    'respect_schedule' => 'Respeta los horarios para optimizar tu metabolismo',
+    'vegetables_free' => 'Los vegetales son libres en todas las comidas principales',
+
+    // ========== ESTRUCTURA DE COMIDAS ==========
+    'meal_structure_am' => '3 comidas principales + 1 snack (Snack AM)',
+    'meal_structure_pm' => '3 comidas principales + 1 snack (Snack PM)',
+
+    // ========== MENSAJES PERSONALIZADOS ==========
+    'personalized_message_am' => 'Hola :name, tu plan incluye 3 comidas principales (Desayuno, Almuerzo, Cena) y un snack en la media mañana, como prefieres.',
+    'personalized_message_pm' => 'Hola :name, tu plan incluye 3 comidas principales (Desayuno, Almuerzo, Cena) y un snack en la media tarde, como prefieres.',
+    'personalized_message_default' => 'Hola :name, tu plan incluye 3 comidas principales (Desayuno, Almuerzo, Cena) y un snack en la media mañana.',
+
+    // ========== TIPS PERSONALIZADOS ==========
+    'snack_am_tip' => 'Snack de media mañana para mantener energía',
+    'snack_pm_tip' => 'Snack de media tarde para evitar llegar con mucha hambre a la cena',
+
+    // ========== REQUISITOS DE VEGETALES ==========
+    'vegetables_requirement' => 'mínimo',
+    'vegetables_recommendation' => 'Consumo mínimo de 100 kcal en vegetales por comida principal',
+];

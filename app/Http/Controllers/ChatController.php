@@ -77,17 +77,17 @@ class ChatController extends Controller
     }
 
     // ⭐ MÉTODO ACTUALIZADO: Ahora incluye historial del día
+
     private function initializeService(Request $request)
     {
         $user = Auth::user();
         $userName = null;
         $mealPlanData = null;
         $userProfile = null;
-        $todayHistory = null; // ⭐ NUEVO
+        $todayHistory = null;
 
         if ($user) {
             $user->load('profile');
-
             $userName = $user->name;
             $userProfile = $user->profile;
 
@@ -103,7 +103,6 @@ class ChatController extends Controller
                     : json_decode($mealPlan->plan_data, true);
             }
 
-            // ⭐ NUEVO: Obtener historial del día
             $todayHistory = $this->getTodayMealHistory($user->id);
         }
 
@@ -114,15 +113,22 @@ class ChatController extends Controller
             $userName = $session->user_name ?? null;
         }
 
-        // ⭐ ACTUALIZADO: Crear servicio con historial
+        // ⭐ USAR EL LOCALE DETECTADO POR EL MIDDLEWARE
+        $locale = app()->getLocale(); // 'es' o 'en'
+
+        Log::info('Inicializando servicio con idioma', [
+            'locale' => $locale,
+            'user_id' => $user->id ?? null
+        ]);
+
+        // ⭐ PASAR EL LOCALE AL SERVICIO
         $this->lumorahService = new LumorahAIService(
             $userName,
-            $userProfile->language ?? 'es',
+            $locale, // ⭐ CAMBIADO: Ahora usa el locale del middleware
             $mealPlanData,
             $userProfile
         );
 
-        // ⭐ NUEVO: Establecer historial del día en el servicio
         if ($todayHistory) {
             $this->lumorahService->setTodayHistory($todayHistory);
             Log::info('Historial del día cargado en el servicio', [

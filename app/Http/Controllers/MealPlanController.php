@@ -246,13 +246,22 @@ class MealPlanController extends Controller
                 ], 429);
             }
 
-            // Despachar job de generación
-            GenerateUserPlanJob::dispatch($user->id);
+            // ⭐ OBTENER LOCALE DEL HEADER
+            $locale = $request->header('Accept-Language', 'es');
+
+            Log::info('🔄 Regenerando plan', [
+                'user_id' => $user->id,
+                'locale' => $locale
+            ]);
+
+            // ⭐ DESPACHAR JOB CON LOCALE
+            GenerateUserPlanJob::dispatch($user->id, $locale); // ⭐ AGREGAR LOCALE
 
             return response()->json([
                 'status' => 'success',
                 'message' => 'Plan en proceso de regeneración',
-                'regenerations_remaining' => 3 - $regenerationsToday - 1
+                'regenerations_remaining' => 3 - $regenerationsToday - 1,
+                'locale' => $locale // ⭐ CONFIRMAR LOCALE
             ]);
 
         } catch (\Exception $e) {

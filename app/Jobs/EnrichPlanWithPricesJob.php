@@ -8,6 +8,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -19,14 +20,26 @@ class EnrichPlanWithPricesJob implements ShouldQueue
     public $timeout = 240;
     public $tries = 2;
 
-    public function __construct($mealPlanId)
+
+    protected $locale; // ⭐ NUEVO
+
+    public function __construct($mealPlanId, $locale = 'en')
     {
         $this->mealPlanId = $mealPlanId;
+        $this->locale = $locale; // ⭐ GUARDAR
     }
 
     public function handle()
     {
-        Log::info('Iniciando EnrichPlanWithPricesJob', ['mealPlanId' => $this->mealPlanId]);
+
+        App::setLocale($this->locale); // ⭐ ESTABLECER LOCALE
+
+
+        Log::info('Iniciando EnrichPlanWithPricesJob', [
+            'mealPlanId' => $this->mealPlanId,
+            'locale' => $this->locale // ⭐ LOG
+        ]);
+
         $mealPlan = MealPlan::find($this->mealPlanId);
 
         if (!$mealPlan) {
@@ -56,7 +69,7 @@ class EnrichPlanWithPricesJob implements ShouldQueue
         }
     }
 
- 
+
     private function enrichPlanWithPrices(array $planData, $profile): array
 {
     $ingredients = $this->extractAllIngredientsFromPlan($planData);
@@ -73,7 +86,7 @@ class EnrichPlanWithPricesJob implements ShouldQueue
         'Colombia' => ['Éxito', 'Jumbo', 'Carulla'],
         default => ['Walmart', 'Soriana', 'Chedraui'],
     };
-    
+
     $currency = match ($country) {
         'Peru' => 'PEN (Soles Peruanos)',
         'Argentina' => 'ARS (Pesos Argentinos)',
@@ -82,13 +95,13 @@ class EnrichPlanWithPricesJob implements ShouldQueue
         'Colombia' => 'COP (Pesos Colombianos)',
         default => 'USD (Dólares Estadounidenses)',
     };
-    
+
     // Mejorar el prompt para obtener precios más realistas
-    $prompt = "Eres un experto en precios de supermercados de {$country}. 
+    $prompt = "Eres un experto en precios de supermercados de {$country}.
     Para cada ingrediente, estima precios REALISTAS en {$currency} para las tiendas: " . implode(', ', $stores) . ".
-    
+
     Ingredientes: " . implode(', ', $ingredients) . "
-    
+
     Devuelve SOLO un JSON válido con esta estructura exacta:
     {
       \"ingrediente1\": {
@@ -124,10 +137,10 @@ class EnrichPlanWithPricesJob implements ShouldQueue
             if (isset($meal[$categoryName]['options']) && is_array($meal[$categoryName]['options'])) {
                 foreach ($meal[$categoryName]['options'] as &$option) {
                     $optionName = trim(preg_replace('/\s*\(.*?\)/', '', $option['name']));
-                    
+
                     // Buscar coincidencias en el mapa de precios
                     foreach ($pricesMap as $priceKey => $priceValue) {
-                        if (stripos($optionName, $priceKey) !== false || 
+                        if (stripos($optionName, $priceKey) !== false ||
                             stripos($priceKey, $optionName) !== false) {
                             if (is_array($priceValue) && isset($priceValue['prices'])) {
                                 $option['prices'] = $priceValue['prices'];
@@ -180,10 +193,10 @@ private function extractAllIngredientsFromPlan(array $planData): array
             }
         }
     }
-    
+
     $uniqueIngredients = array_values(array_unique($ingredients));
     Log::info('Ingredientes extraídos para precios:', ['ingredients' => $uniqueIngredients]);
-    
+
     return $uniqueIngredients;
 }
 

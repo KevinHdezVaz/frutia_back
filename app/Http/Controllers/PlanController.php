@@ -7,6 +7,7 @@ use App\Models\MealPlan;
 use App\Models\FoodImage;
 use Illuminate\Http\Request;
 use App\Jobs\GenerateUserPlanJob;
+use Illuminate\Support\Facades\Log;
 
 class PlanController extends Controller
 {
@@ -21,12 +22,33 @@ class PlanController extends Controller
             return response()->json(['message' => 'El perfil del usuario no está completo para generar un plan.'], 400);
         }
 
-        GenerateUserPlanJob::dispatch($user->id);
+        // ⭐ LOG DETALLADO
+        Log::info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        Log::info('🌐 SOLICITUD DE GENERACIÓN DE PLAN RECIBIDA');
+        Log::info('   User ID: ' . $user->id);
+        Log::info('   Raw Header: ' . $request->header('Accept-Language'));
+
+        // ⭐ OBTENER Y NORMALIZAR LOCALE
+        $rawLocale = $request->header('Accept-Language', 'es');
+        $locale = substr(strtolower($rawLocale), 0, 2);
+
+        // ⭐ VALIDAR
+        if (!in_array($locale, ['es', 'en'])) {
+            Log::warning('   ⚠️ Locale no válido: ' . $locale . ', usando fallback: es');
+            $locale = 'es';
+        }
+
+        Log::info('   Locale final: ' . $locale);
+        Log::info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+        GenerateUserPlanJob::dispatch($user->id, $locale);
 
         return response()->json([
-            'message' => 'Hemos recibido tu solicitud. Tu plan se está generando y te notificaremos cuando esté listo.'
+            'message' => 'Hemos recibido tu solicitud. Tu plan se está generando y te notificaremos cuando esté listo.',
+            'locale' => $locale
         ], 202);
     }
+
 
     /**
      * Verifica si el plan de alimentación ya está listo.
@@ -87,8 +109,7 @@ class PlanController extends Controller
      * @param array $planData El array del plan original.
      * @return array El array del plan procesado.
      */
-
-     private function processPlanForFrontend(array $planData): array
+    private function processPlanForFrontend(array $planData): array
     {
         // Pasamos el array por referencia para modificarlo directamente.
         array_walk_recursive($planData, function (&$value, $key) {

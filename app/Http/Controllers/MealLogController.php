@@ -22,13 +22,14 @@ class MealLogController extends Controller
 
         $user = $request->user();
 
-        // Usamos updateOrCreate para evitar duplicados. Si ya existe un registro
-        // para ese usuario, en esa fecha y para esa comida, lo actualiza. Si no, lo crea.
+        // ⭐ NORMALIZAR meal_type antes de guardar (siempre en español)
+        $normalizedMealType = $this->normalizeMealTypeToSpanish($validated['meal_type']);
+
         $log = MealLog::updateOrCreate(
             [
                 'user_id' => $user->id,
                 'date' => Carbon::parse($validated['date'])->toDateString(),
-                'meal_type' => $validated['meal_type'],
+                'meal_type' => $normalizedMealType, // ⭐ GUARDAR NORMALIZADO
             ],
             [
                 'selections' => $validated['selections']
@@ -39,20 +40,47 @@ class MealLogController extends Controller
     }
 
     /**
-     * Devuelve el historial de comidas del usuario, paginado.
+     * ⭐ Normaliza meal_type a español para almacenamiento consistente
+     */
+    private function normalizeMealTypeToSpanish(string $mealType): string
+    {
+        $normalized = strtolower($mealType);
+        
+        $mapping = [
+            'breakfast' => 'Desayuno',
+            'desayuno' => 'Desayuno',
+            'lunch' => 'Almuerzo',
+            'almuerzo' => 'Almuerzo',
+            'dinner' => 'Cena',
+            'cena' => 'Cena',
+            'snack am' => 'Snack AM',
+            'morning snack' => 'Snack AM',
+            'snack pm' => 'Snack PM',
+            'afternoon snack' => 'Snack PM',
+            'fruit snack' => 'Snack de frutas',
+            'snack de frutas' => 'Snack de frutas',
+            'shake' => 'Shake',
+        ];
+
+        return $mapping[$normalized] ?? $mealType;
+    }
+
+    /**
+     * Devuelve el historial de comidas del usuario
      */
     public function index(Request $request)
     {
         $logs = $request->user()
             ->mealLogs()
-            ->latest('date') // Ordena por fecha, los más recientes primero
-            ->paginate(30); // Devuelve de 30 en 30 para no sobrecargar
+            ->latest('date')
+            ->paginate(30);
 
+        // ⭐ NO traducir - devolver siempre en español
         return response()->json($logs);
     }
 
     /**
-     * ⭐ NUEVO: Obtiene el historial de comidas de hoy
+     * Obtiene el historial de comidas de hoy
      */
     public function getTodayHistory(Request $request)
     {
@@ -64,7 +92,6 @@ class MealLogController extends Controller
                 ->where('date', $today)
                 ->get();
 
-            // Calcular totales del día
             $dailyTotals = [
                 'calories' => 0,
                 'protein' => 0,
@@ -80,11 +107,10 @@ class MealLogController extends Controller
                     'fats' => 0,
                 ];
 
-                // Las selections están guardadas como JSON en el campo 'selections'
                 $selections = collect($log->selections)->map(function ($selection) use (&$mealTotals, &$dailyTotals) {
                     $calories = $selection['calories'] ?? 0;
                     $protein = $selection['protein'] ?? 0;
-                    $carbs = $selection['carbohydrates'] ?? $selection['carbs'] ?? 0; // ⭐ Buscar ambos nombres
+                    $carbs = $selection['carbohydrates'] ?? $selection['carbs'] ?? 0;
                     $fats = $selection['fats'] ?? 0;
 
                     $mealTotals['calories'] += $calories;
@@ -92,7 +118,6 @@ class MealLogController extends Controller
                     $mealTotals['carbs'] += $carbs;
                     $mealTotals['fats'] += $fats;
 
-                    // Acumular en totales diarios
                     $dailyTotals['calories'] += $calories;
                     $dailyTotals['protein'] += $protein;
                     $dailyTotals['carbs'] += $carbs;
@@ -109,7 +134,7 @@ class MealLogController extends Controller
                 });
 
                 return [
-                    'meal_type' => $log->meal_type,
+                    'meal_type' => $log->meal_type, // ⭐ NO TRADUCIR - devolver tal cual (español)
                     'selections' => $selections,
                     'totals' => $mealTotals,
                     'logged_at' => $log->created_at,
@@ -119,7 +144,7 @@ class MealLogController extends Controller
             return response()->json([
                 'status' => 'success',
                 'date' => $today,
-                'daily_totals' => $dailyTotals, // ⭐ TOTALES DEL DÍA
+                'daily_totals' => $dailyTotals,
                 'meals' => $formattedLogs,
             ]);
 
@@ -133,7 +158,7 @@ class MealLogController extends Controller
             return response()->json([
                 'status' => 'error',
                 'message' => 'Error al obtener el historial de hoy',
-                'debug' => $e->getMessage() // ⭐ Para debugging
+                'debug' => $e->getMessage()
             ], 500);
         }
     }
