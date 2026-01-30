@@ -21,54 +21,47 @@ class PromptBuilderService
 
         $preferredName = $userName;
         $communicationStyle = $basicData['preferences']['communication_style'];
-
-        $sports = !empty($basicData['sports_data']['sports']) ? implode(', ', $basicData['sports_data']['sports']) : 'Ninguno especificado';
+        $sports = !empty($basicData['sports_data']['sports']) ? implode(', ', $basicData['sports_data']['sports']) : __('none_specified');
         $mealTimes = $basicData['meal_times'];
-        $difficulties = !empty($basicData['emotional_profile']['diet_difficulties']) ? implode(', ', $basicData['emotional_profile']['diet_difficulties']) : 'Ninguna especificada';
-        $motivations = !empty($basicData['emotional_profile']['diet_motivations']) ? implode(', ', $basicData['emotional_profile']['diet_motivations']) : 'Ninguna especificada';
+
+        $difficulties = !empty($basicData['emotional_profile']['diet_difficulties']) ? implode(', ', $basicData['emotional_profile']['diet_difficulties']) : __('none_specified');
+        $motivations = !empty($basicData['emotional_profile']['diet_motivations']) ? implode(', ', $basicData['emotional_profile']['diet_motivations']) : __('none_specified');
 
         $dislikedFoodsPrompt = '';
         if (!empty($basicData['preferences']['disliked_foods'])) {
             $dislikedList = $basicData['preferences']['disliked_foods'];
-
             $dislikedFoodsPrompt = "
-🔴 **ALIMENTOS QUE {$userName} NO QUIERE COMER:**
+🔴 **" . __('foods_that_:name_does_not_want_to_eat', ['name' => $userName]) . "**
 {$dislikedList}
-
-⚠️ PROHIBICIÓN ABSOLUTA - NUNCA VIOLAR:
-- NUNCA uses estos alimentos en ninguna receta
-- Si un alimento prohibido es clave para una categoría, usa alternativas:
-  * NO pollo → USA: Atún, huevo, carne molida, pescado
-  * NO arroz → USA: Papa, camote, fideo, quinua
-  * NO aguacate → USA: Maní, aceite vegetal, almendras
-  * NO huevo → USA: Atún, pollo, yogurt griego
-  * NO lácteos → USA: Leches vegetales, tofu, legumbres
-- Cada receta debe respetar estas restricciones
-- Si no hay suficientes alternativas, informa al usuario
+⚠️ " . __('absolute_prohibition_never_violate') . "
+- " . __('never_use_these_foods_in_any_recipe') . "
+- " . __('if_prohibited_food_key_use_alternatives') . "
+  * " . __('no_chicken_use_canned_tuna_whole_egg_ground_beef_white_fish') . "
+  * " . __('no_rice_use_potato_sweet_potato_noodles_quinoa') . "
+  * " . __('no_avocado_use_peanuts_vegetable_oil_almonds') . "
+  * " . __('no_egg_use_canned_tuna_chicken_breast_greek_yogurt') . "
+  * " . __('no_dairy_use_plant_milks_tofu_legumes') . "
+- " . __('each_recipe_must_respect_restrictions') . "
+- " . __('if_not_enough_alternatives_inform_user') . "
 ";
         }
 
         $allergiesPrompt = '';
         if (!empty($basicData['health_status']['allergies'])) {
             $allergiesList = $basicData['health_status']['allergies'];
-
             $allergiesPrompt = "
-🚨 **ALERGIAS ALIMENTARIAS CRÍTICAS (PELIGRO DE MUERTE):**
+🚨 **" . __('critical_food_allergies_death_danger') . "**
 {$allergiesList}
-
-⚠️⚠️⚠️ ADVERTENCIA MÁXIMA:
-- Estos alimentos pueden MATAR a {$userName}
-- NUNCA incluyas ni rastros de estos ingredientes
-- REVISA ingredientes ocultos (ej: trazas de frutos secos en productos)
-- Ante la MÍNIMA duda, NO incluyas el ingrediente
+⚠️⚠️⚠️ " . __('maximum_warning') . ":
+- " . __('these_foods_can_kill_:name', ['name' => $userName]) . "
+- " . __('never_include_even_traces') . "
+- " . __('check_hidden_ingredients') . "
+- " . __('in_case_of_doubt_do_not_include') . "
 ";
         }
 
         $budget = $basicData['preferences']['budget'];
-        $budgetType = str_contains(strtolower($budget), 'bajo') ? 'BAJO' : 'ALTO';
-
-        $allowedFoods = $this->getAllowedFoodsByBudget($budgetType);
-        $prohibitedFoods = $this->getProhibitedFoodsByBudget($budgetType);
+        $budgetType = str_contains(strtolower($budget), 'low') || str_contains(strtolower($budget), 'bajo') ? 'LOW' : 'HIGH';
 
         $dietaryInstructions = $this->getDetailedDietaryInstructions($basicData['preferences']['dietary_style']);
         $budgetInstructions = $this->getDetailedBudgetInstructions($budget, $basicData['country']);
@@ -76,209 +69,167 @@ class PromptBuilderService
         $countrySpecificFoods = $this->getCountrySpecificFoods($basicData['country'], $budget);
 
         $attemptEmphasis = $attemptNumber > 1 ? "
-
-    ⚠️ ATENCIÓN: Este es el intento #{$attemptNumber}. Los intentos anteriores fallaron por no cumplir las reglas.
-    ES CRÍTICO que sigas TODAS las instrucciones AL PIE DE LA LETRA.
+    ⚠️ " . __('attention_attempt_:number_previous_failed', ['number' => $attemptNumber]) . "
+    " . __('critical_follow_all_instructions') . "
     " : "";
 
         $deficitInfo = '';
-        if (str_contains(strtolower($basicData['goal']), 'bajar grasa')) {
+        if (str_contains(strtolower($basicData['goal']), 'lose fat') || str_contains(strtolower($basicData['goal']), 'bajar grasa')) {
             $sex = strtolower($basicData['sex']);
-            $deficitPercentage = ($sex === 'femenino') ? '25%' : '35%';
+            $deficitPercentage = ($sex === 'femenino' || $sex === 'female') ? '25%' : '35%';
             $deficitInfo = "
-
-    📊 **DÉFICIT CALÓRICO APLICADO:**
-    - Sexo: {$basicData['sex']}
-    - Déficit: {$deficitPercentage} (GET: {$nutritionalData['get']} kcal → Objetivo: {$nutritionalData['target_calories']} kcal)
-    " . (($sex === 'femenino') ?
-                "- Para mujeres se usa un déficit moderado del 25% para evitar calorías muy bajas" :
-                "- Para hombres se usa un déficit más agresivo del 35%");
+    📊 **" . __('caloric_deficit_applied') . "**
+    - " . __('sex') . ": {$basicData['sex']}
+    - " . __('deficit') . ": {$deficitPercentage} (GET: {$nutritionalData['get']} kcal → " . __('target') . ": {$nutritionalData['target_calories']} kcal)
+    " . (($sex === 'femenino' || $sex === 'female') ?
+"- " . __('moderate_deficit_women_avoid_low_calories') :
+"- " . __('aggressive_deficit_men'));
         }
 
         return "
-    Eres un nutricionista experto especializado en planes alimentarios ULTRA-PERSONALIZADOS.
-    Tu cliente se llama {$preferredName} y has trabajado con él/ella durante meses.
-
+    " . __('you_are_expert_nutritionist_ultra_personalized') . "
+    " . __('your_client_named_:name', ['name' => $preferredName]) . "
     {$attemptEmphasis}
     {$deficitInfo}
     {$favoritesSection}
-
-    🔴 REGLAS CRÍTICAS OBLIGATORIAS - PRESUPUESTO {$budgetType} 🔴
-
-    **REGLA #1: ALIMENTOS SEGÚN PRESUPUESTO {$budgetType}**
-    **REGLA #1.5: RESTRICCIONES ESPECIALES DE ALIMENTOS**
-- ❌ QUINUA: PROHIBIDA en Desayuno. Solo permitida en Almuerzo y Cena
-- ⚠️ CAMOTE y MANÍ: Usar solo como ÚLTIMA opción si no hay alternativas
-
-    " . ($budgetType === 'ALTO' ? "
-    ✅ OBLIGATORIO usar ESTOS alimentos premium:
-    PROTEÍNAS DESAYUNO: Claras + Huevo Entero, Yogurt griego, Proteína whey
-    PROTEÍNAS ALMUERZO/CENA: Pechuga de pollo, Salmón fresco, Atún fresco, Carne de res magra
-    CARBOHIDRATOS: Quinua, Avena orgánica, Pan integral artesanal, Camote, arroz blanco
-    GRASAS: Aceite de oliva extra virgen, Almendras, Nueces, Aguacate hass
-
-    ❌ PROHIBIDO usar: Huevo entero, Pollo muslo, Atún en lata, Aceite vegetal, Maní, Arroz blanco, Pan de molde
+    🔴 " . __('critical_rules_budget_:type', ['type' => $budgetType]) . " 🔴
+    **" . __('rule_1_foods_by_budget_:type', ['type' => $budgetType]) . "**
+    **" . __('rule_1_5_special_food_restrictions') . "**
+- ❌ " . __('quinoa_forbidden_breakfast_only_lunch_dinner') . "
+- ⚠️ " . __('sweet_potato_peanuts_last_resort') . "
+    " . ($budgetType === 'HIGH' ? "
+    ✅ " . __('mandatory_use_premium_foods') . ":
+    " . __('breakfast_proteins_egg_whites_yogurt_whey') . "
+    " . __('lunch_dinner_proteins_chicken_salmon_tuna_beef') . "
+    " . __('carbs_quinoa_oats_bread_sweet_potato_rice') . "
+    " . __('fats_olive_oil_almonds_walnuts_avocado') . "
+    ❌ " . __('forbidden_high_budget_whole_egg_thigh_tuna_oil_peanuts_rice_bread') . "
     " : "
-    ✅ OBLIGATORIO usar ESTOS alimentos económicos:
-    PROTEÍNAS: Huevo entero (MAX 1 comida), Pollo muslo, Atún en lata, Carne molida
-    CARBOHIDRATOS: Arroz blanco, Papa, Avena tradicional, Tortillas de maíz, Fideos, Frijoles
-    GRASAS: Aceite vegetal, Maní, Aguacate pequeño (cuando esté en temporada)
-
-    ❌ PROHIBIDO usar: Salmón, Pechuga de pollo, Quinua, Almendras, Aceite de oliva extra virgen, Proteína en polvo
+    ✅ " . __('mandatory_use_economical_foods') . ":
+    " . __('proteins_whole_egg_thigh_tuna_beef') . "
+    " . __('carbs_rice_potato_oats_tortilla_noodles_beans') . "
+    " . __('fats_vegetable_oil_peanuts_small_avocado') . "
+    ❌ " . __('forbidden_low_budget_salmon_chicken_quinoa_almonds_olive_oil_powder') . "
     ") . "
-
-    **REGLA #2: VARIEDAD OBLIGATORIA**
-    - Huevos (cualquier tipo): MÁXIMO 1 comida del día
-    - NO repetir la misma proteína en más de 2 comidas
-    - Cada comida debe tener opciones diferentes
-
-    **REGLA #3: MACROS EXACTOS QUE DEBEN CUMPLIRSE**
-    La suma total del día DEBE ser:
-    - Proteínas: {$macros['protein']['grams']}g (tolerancia máxima ±5g)
-    - Carbohidratos: {$macros['carbohydrates']['grams']}g (tolerancia máxima ±10g)
-    - Grasas: {$macros['fats']['grams']}g (tolerancia máxima ±5g)
-    - Calorías totales: {$macros['calories']} kcal
-
-    **REGLA #4: CONTABILIZAR TODO (OBLIGATORIO)**
-    - ✅ OBLIGATORIO: Incluir MÍNIMO 100 kcal de vegetales en cada comida principal (Desayuno, Almuerzo, Cena)
-    - Las verduras NO son \"libres\", tienen un consumo mínimo obligatorio
-    - INCLUYE calorías de salsas y aderezos:
-      * Aceite en ensalada: 10ml = 90 kcal
-      * Salsa de tomate casera: 50ml = 25 kcal
-      * Limón: despreciable
-      * Vinagre balsámico: 15ml = 15 kcal
-      * Mayonesa light: 15g = 30 kcal
-    - Rango de vegetales: 100-150 kcal por comida principal
-    - SUMA TODOS los componentes (proteína + carbos + grasas + vegetales + salsas) para llegar a los macros objetivo
-
-    **PORCIONES DE VEGETALES (100 kcal equivale a):**
-    - 2.5 tazas de ensalada mixta con tomate (350g)
-    - 2 tazas de vegetales al vapor: brócoli, zanahoria, ejotes (300g)
-    - 400g de ensalada verde: lechuga, espinaca, pepino
-    - 2 tazas de vegetales salteados con especias (280g)
-
-    **IMPORTANTE:** Estos vegetales DEBEN sumarse a los macros totales de la comida.
-
-    **REGLA #5: MICRONUTRIENTES OBLIGATORIOS**
-    - Fibra: Mínimo 10g por comida principal (objetivo diario: 30-40g total)
-    - Vitaminas: Incluir fuentes de vitamina C (cítricos, pimiento), D (pescado, huevo) y hierro (carnes/legumbres)
-    - Minerales: Asegurar calcio (lácteos, vegetales verdes), magnesio (frutos secos, semillas) y potasio (plátano, papa, vegetales)
-    - Cada comida debe aportar variedad de colores para diferentes fitonutrientes
-    - Los vegetales de 100 kcal aportan aproximadamente 6-9g de fibra
-
-    ⚠️⚠️⚠️ ERROR COMÚN QUE DEBES EVITAR:
-    Los planes anteriores FALLARON porque pusieron:
-    - ❌ Grasas muy altas (59-65g cuando deberían ser {$macros['fats']['grams']}g)
-    - ❌ Carbohidratos muy bajos (164-165g cuando deberían ser {$macros['carbohydrates']['grams']}g)
-
-    ✅ FÓRMULA CORRECTA 40/40/20:
-    - Proteínas = {$macros['calories']} kcal * 0.40 ÷ 4 cal/g = {$macros['protein']['grams']}g
-    - Carbohidratos = {$macros['calories']} kcal * 0.40 ÷ 4 cal/g = {$macros['carbohydrates']['grams']}g
-    - Grasas = {$macros['calories']} kcal * 0.20 ÷ 9 cal/g = {$macros['fats']['grams']}g
-
-    Si tus cálculos dan DIFERENTE, revisa tu matemática ANTES de responder.
-
-    **DISTRIBUCIÓN POR COMIDA:**
-    - Desayuno: 30% de los macros totales
-    - Almuerzo: 40% de los macros totales
-    - Cena: 30% de los macros totales
-
-    **INFORMACIÓN NUTRICIONAL CALCULADA:**
+    **" . __('rule_2_mandatory_variety') . "**
+    - " . __('eggs_max_once_per_day') . "
+    - " . __('no_repeat_protein_more_than_twice') . "
+    - " . __('different_options_per_meal') . "
+    **" . __('rule_3_exact_macros_must_match') . "**
+    " . __('total_daily_sum_must_be') . ":
+    - " . __('proteins_:grams_g_tolerance_5g', ['grams' => $macros['protein']['grams']]) . "
+    - " . __('carbs_:grams_g_tolerance_10g', ['grams' => $macros['carbohydrates']['grams']]) . "
+    - " . __('fats_:grams_g_tolerance_5g', ['grams' => $macros['fats']['grams']]) . "
+    - " . __('total_calories_:calories_kcal', ['calories' => $macros['calories']]) . "
+    **" . __('rule_4_account_everything_mandatory') . "**
+    - ✅ " . __('mandatory_minimum_vegetables_main_meals') . "
+    - " . __('vegetables_not_free_minimum_required') . "
+    - " . __('include_sauces_dressings_calories') . ":
+      * " . __('olive_oil_salad_10ml_90kcal') . "
+      * " . __('tomato_sauce_50ml_25kcal') . "
+      * " . __('lemon_negligible') . "
+      * " . __('balsamic_15ml_15kcal') . "
+      * " . __('light_mayo_15g_30kcal') . "
+    - " . __('vegetable_range_100_150kcal_main_meal') . "
+    - " . __('vegetables_contribute_total_macros') . "
+    **" . __('vegetable_portions_100kcal') . "**
+    - " . __('2.5_cups_mixed_salad_tomato_350g') . "
+    - " . __('2_cups_steamed_vegetables_300g') . "
+    - " . __('400g_green_salad') . "
+    - " . __('2_cups_sauteed_vegetables_280g') . "
+    **" . __('important_vegetables_add_meal_macros') . "**
+    **" . __('rule_5_mandatory_micronutrients') . "**
+    - " . __('fiber_min_10g_main_meal_daily_30_40g') . "
+    - " . __('vitamins_sources_c_d_iron') . "
+    - " . __('minerals_calcium_magnesium_potassium') . "
+    - " . __('meal_color_variety_phytonutrients') . "
+    - " . __('vegetables_100kcal_6_9g_fiber') . "
+    ⚠️⚠️⚠️ " . __('common_error_avoid') . ":
+    " . __('previous_plans_failed_high_fats_low_carbs') . "
+    ✅ " . __('correct_40_40_20_formula') . ":
+    - " . __('proteins_formula', ['calories' => $macros['calories'], 'grams' => $macros['protein']['grams']]) . "
+    - " . __('carbs_formula', ['calories' => $macros['calories'], 'grams' => $macros['carbohydrates']['grams']]) . "
+    - " . __('fats_formula', ['calories' => $macros['calories'], 'grams' => $macros['fats']['grams']]) . "
+    " . __('if_calculations_differ_check_math') . "
+    **" . __('meal_distribution') . "**
+    - " . __('breakfast_30_percent') . "
+    - " . __('lunch_40_percent') . "
+    - " . __('dinner_30_percent') . "
+    **" . __('calculated_nutritional_info') . "**
     - TMB: {$nutritionalData['tmb']} kcal
     - GET: {$nutritionalData['get']} kcal
-    - Calorías Objetivo: {$nutritionalData['target_calories']} kcal
-    - Factor de Actividad: {$nutritionalData['activity_factor']}
-
-    **PERFIL DE {$preferredName}:**
-    - Edad: {$basicData['age']} años, {$basicData['sex']}
-    - Peso: {$basicData['weight']} kg, Altura: {$basicData['height']} cm
-    - BMI: {$basicData['anthropometric_data']['bmi']} ({$basicData['anthropometric_data']['weight_status']})
-    - País: {$basicData['country']}
-    - Objetivo: {$basicData['goal']}
-    - Deportes: {$sports}
-    - Estilo alimentario: {$basicData['preferences']['dietary_style']}
-    - Alimentos que NO le gustan: {$basicData['preferences']['disliked_foods']}
-    - Alergias: {$basicData['health_status']['allergies']}
-    - Come fuera: {$basicData['preferences']['eats_out']}
-    - Dificultades: {$difficulties}
-    - Motivaciones: {$motivations}
+    - " . __('target_calories') . ": {$nutritionalData['target_calories']} kcal
+    - " . __('activity_factor') . ": {$nutritionalData['activity_factor']}
+    **{$preferredName} " . __('profile') . "**
+    - " . __('age_years_sex') . ": {$basicData['age']} " . __('years') . ", {$basicData['sex']}
+    - " . __('weight_height_bmi_status') . ": {$basicData['weight']} kg, {$basicData['height']} cm, BMI: {$basicData['anthropometric_data']['bmi']} ({$basicData['anthropometric_data']['weight_status']})
+    - " . __('country') . ": {$basicData['country']}
+    - " . __('goal') . ": {$basicData['goal']}
+    - " . __('sports') . ": {$sports}
+    - " . __('dietary_style') . ": {$basicData['preferences']['dietary_style']}
+    - " . __('disliked_foods') . ": {$basicData['preferences']['disliked_foods']}
+    - " . __('allergies') . ": {$basicData['health_status']['allergies']}
+    - " . __('eats_out') . ": {$basicData['preferences']['eats_out']}
+    - " . __('difficulties') . ": {$difficulties}
+    - " . __('motivations') . ": {$motivations}
     {$dislikedFoodsPrompt}
     {$allergiesPrompt}
     {$budgetInstructions}
     {$dietaryInstructions}
     {$communicationInstructions}
-
-    **ALIMENTOS ESPECÍFICOS PARA {$basicData['country']}:**
+    **" . __('specific_ingredients_country_:country', ['country' => strtoupper($basicData['country'])]) . "**
     {$countrySpecificFoods}
-
-    **VERIFICACIÓN OBLIGATORIA ANTES DE RESPONDER:**
-
-    🔴🔴🔴 CÁLCULO MATEMÁTICO PASO A PASO 🔴🔴🔴
-
-    **PASO 1: MACROS POR COMIDA (YA CALCULADOS)**
-    Desayuno (30% del total):
-    - Proteínas: " . round($macros['protein']['grams'] * 0.30) . "g
-    - Carbohidratos: " . round($macros['carbohydrates']['grams'] * 0.30) . "g
-    - Grasas: " . round($macros['fats']['grams'] * 0.30) . "g
-    - Calorías: ~" . round($macros['calories'] * 0.30) . " kcal
-
-    Almuerzo (40% del total):
-    - Proteínas: " . round($macros['protein']['grams'] * 0.40) . "g
-    - Carbohidratos: " . round($macros['carbohydrates']['grams'] * 0.40) . "g
-    - Grasas: " . round($macros['fats']['grams'] * 0.40) . "g
-    - Calorías: ~" . round($macros['calories'] * 0.40) . " kcal
-
-    Cena (30% del total):
-    - Proteínas: " . round($macros['protein']['grams'] * 0.30) . "g
-    - Carbohidratos: " . round($macros['carbohydrates']['grams'] * 0.30) . "g
-    - Grasas: " . round($macros['fats']['grams'] * 0.30) . "g
-    - Calorías: ~" . round($macros['calories'] * 0.30) . " kcal
-
-    **PASO 2: FÓRMULA PARA CALCULAR PORCIONES**
-    Para CADA alimento, usa esta fórmula obligatoria:
-
-    Porción (gramos) = (Macro objetivo de la comida ÷ Macro por 100g del alimento) × 100
-
-    📝 EJEMPLOS REALES para que entiendas:
-
-    Desayuno Proteínas (necesitas " . round($macros['protein']['grams'] * 0.30) . "g):
-    • Si usas Claras pasteurizadas (11g proteína/100g):
-      → Porción = (" . round($macros['protein']['grams'] * 0.30) . " ÷ 11) × 100 = " . round(($macros['protein']['grams'] * 0.30 / 11) * 100) . "g
-
-    • Si usas Yogurt griego alto en proteínas (20g proteína/100g):
-      → Porción = (" . round($macros['protein']['grams'] * 0.30) . " ÷ 20) × 100 = " . round(($macros['protein']['grams'] * 0.30 / 20) * 100) . "g
-
-    Desayuno Carbohidratos (necesitas " . round($macros['carbohydrates']['grams'] * 0.30) . "g):
-    • Si usas Avena orgánica (67g carbos/100g):
-      → Porción = (" . round($macros['carbohydrates']['grams'] * 0.30) . " ÷ 67) × 100 = " . round(($macros['carbohydrates']['grams'] * 0.30 / 67) * 100) . "g
-
-    **PASO 3: VERIFICAR SUMA TOTAL (CRÍTICO)**
-    Después de calcular TODAS las porciones, SUMA los macros de las opciones primarias:
-
-    ✓ Total Proteínas = {$macros['protein']['grams']}g (tolerancia: ±5g)
-    ✓ Total Carbohidratos = {$macros['carbohydrates']['grams']}g (tolerancia: ±10g)
-    ✓ Total Grasas = {$macros['fats']['grams']}g (tolerancia: ±5g)
-
-    ⚠️⚠️⚠️ SI LA SUMA NO CUMPLE, AJUSTA LAS PORCIONES HASTA QUE SÍ ⚠️⚠️⚠️
-
-    **PASO 4: CHECKLIST FINAL**
-    Antes de generar el JSON, verifica:
-    1. ✓ ¿Todos los alimentos son del presupuesto {$budgetType}?
-    2. ✓ ¿Los huevos aparecen máximo 1 vez al día?
-    3. ✓ ¿Hay variedad entre las comidas?
-    4. ✓ ¿La quinua NO está en desayuno?
-    5. ✓ ¿Los pesos están correctos (cocido vs crudo)?
-    6. ✓ ¿La suma de proteínas = {$macros['protein']['grams']}g ±5g?
-    7. ✓ ¿La suma de carbos = {$macros['carbohydrates']['grams']}g ±10g?
-    8. ✓ ¿La suma de grasas = {$macros['fats']['grams']}g ±5g?
-
-    🔴 RESTRICCIONES ABSOLUTAS - NUNCA VIOLAR:
-    " . ($allergiesPrompt ? "- ALERGIAS MORTALES ya especificadas arriba ☝️" : "- No hay alergias reportadas") . "
-    " . ($dislikedFoodsPrompt ? "- ALIMENTOS NO DESEADOS ya especificados arriba ☝️" : "- No hay alimentos que evitar") . "
-
-    **ESTRUCTURA JSON OBLIGATORIA:**
+    **" . __('mandatory_verification_before_responding') . "**
+    🔴🔴🔴 " . __('step_by_step_math_calculation') . " 🔴🔴🔴
+    **" . __('step_1_macros_per_meal_calculated') . "**
+    " . __('breakfast_30') . ":
+    - " . __('proteins') . ": " . round($macros['protein']['grams'] * 0.30) . "g
+    - " . __('carbs') . ": " . round($macros['carbohydrates']['grams'] * 0.30) . "g
+    - " . __('fats') . ": " . round($macros['fats']['grams'] * 0.30) . "g
+    - " . __('calories') . ": ~" . round($macros['calories'] * 0.30) . " kcal
+    " . __('lunch_40') . ":
+    - " . __('proteins') . ": " . round($macros['protein']['grams'] * 0.40) . "g
+    - " . __('carbs') . ": " . round($macros['carbohydrates']['grams'] * 0.40) . "g
+    - " . __('fats') . ": " . round($macros['fats']['grams'] * 0.40) . "g
+    - " . __('calories') . ": ~" . round($macros['calories'] * 0.40) . " kcal
+    " . __('dinner_30') . ":
+    - " . __('proteins') . ": " . round($macros['protein']['grams'] * 0.30) . "g
+    - " . __('carbs') . ": " . round($macros['carbohydrates']['grams'] * 0.30) . "g
+    - " . __('fats') . ": " . round($macros['fats']['grams'] * 0.30) . "g
+    - " . __('calories') . ": ~" . round($macros['calories'] * 0.30) . " kcal
+    **" . __('step_2_portion_formula') . "**
+    " . __('for_each_food_use_mandatory_formula') . ":
+    " . __('portion_grams = (meal_target ÷ per_100g) × 100') . "
+    📝 " . __('real_examples_breakfast_proteins_need_:grams', ['grams' => round($macros['protein']['grams'] * 0.30)]) . ":
+    • " . __('if_egg_whites_11g_protein_100g') . "
+      → " . __('portion = (:grams ÷ 11) × 100 = :result g', ['grams' => round($macros['protein']['grams'] * 0.30), 'result' => round(($macros['protein']['grams'] * 0.30 / 11) * 100)]) . "
+    • " . __('if_high_protein_yogurt_20g_protein_100g') . "
+      → " . __('portion = (:grams ÷ 20) × 100 = :result g', ['grams' => round($macros['protein']['grams'] * 0.30), 'result' => round(($macros['protein']['grams'] * 0.30 / 20) * 100)]) . "
+    " . __('breakfast_carbs_need_:grams', ['grams' => round($macros['carbohydrates']['grams'] * 0.30)]) . ":
+    • " . __('if_organic_oats_67g_carbs_100g') . "
+      → " . __('portion = (:grams ÷ 67) × 100 = :result g', ['grams' => round($macros['carbohydrates']['grams'] * 0.30), 'result' => round(($macros['carbohydrates']['grams'] * 0.30 / 67) * 100)]) . "
+    **" . __('step_3_verify_total_sum_critical') . "**
+    " . __('after_all_portions_sum_primary_options') . ":
+    ✓ " . __('total_proteins_:grams_g_tolerance_5g', ['grams' => $macros['protein']['grams']]) . "
+    ✓ " . __('total_carbs_:grams_g_tolerance_10g', ['grams' => $macros['carbohydrates']['grams']]) . "
+    ✓ " . __('total_fats_:grams_g_tolerance_5g', ['grams' => $macros['fats']['grams']]) . "
+    ⚠️⚠️⚠️ " . __('if_not_match_adjust_portions') . " ⚠️⚠️⚠️
+    **" . __('step_4_final_checklist') . "**
+    " . __('before_json_verify') . ":
+    1. ✓ " . __('all_foods_budget_:type?', ['type' => $budgetType]) . "
+    2. ✓ " . __('eggs_max_once_day?') . "
+    3. ✓ " . __('variety_meals?') . "
+    4. ✓ " . __('quinoa_not_breakfast?') . "
+    5. ✓ " . __('weights_correct_cooked_raw?') . "
+    6. ✓ " . __('sum_proteins_:grams_g_5g?', ['grams' => $macros['protein']['grams']]) . "
+    7. ✓ " . __('sum_carbs_:grams_g_10g?', ['grams' => $macros['carbohydrates']['grams']]) . "
+    8. ✓ " . __('sum_fats_:grams_g_5g?', ['grams' => $macros['fats']['grams']]) . "
+    🔴 " . __('absolute_restrictions_never_violate') . ":
+    " . ($allergiesPrompt ? "- " . __('deadly_allergies_above') : "- " . __('no_allergies')) . "
+    " . ($dislikedFoodsPrompt ? "- " . __('unwanted_foods_above') : "- " . __('no_avoid_foods')) . "
+    **" . __('mandatory_json_structure') . "**
     {
-      \"nutritionPlan\": {
+\"nutritionPlan\": {
         \"personalizedMessage\": \"Mensaje personal para {$preferredName}...\",
         \"anthropometricSummary\": {
           \"clientName\": \"{$preferredName}\",
@@ -335,42 +286,25 @@ class PromptBuilderService
           \"lunch\": \"{$mealTimes['lunch_time']}\",
           \"dinner\": \"{$mealTimes['dinner_time']}\"
         },
-        \"meals\": {
-          \"Desayuno\": {
-            \"Proteínas\": {
-              \"options\": []
-            },
-            \"Carbohidratos\": {
-              \"options\": []
-            },
-            \"Grasas\": {
-              \"options\": []
-            },
-            \"Vegetales\": {
-              \"options\": [
-                {\"name\": \"Ensalada LIBRE\", \"portion\": \"Sin restricción\", \"calories\": 25, \"protein\": 2, \"fats\": 0, \"carbohydrates\": 5}
-              ]
-            }
-          },
-          \"Almuerzo\": {},
-          \"Cena\": {}
+\"meals\": {
+\"breakfast\": {
+\"Proteins\": {\"options\": []},
+\"Carbs\": {\"options\": []},
+\"Fats\": {\"options\": []},
+\"Vegetables\": {\"options\": []}
         },
-        \"personalizedTips\": {
-          \"anthropometricGuidance\": \"Consejos basados en BMI {$basicData['anthropometric_data']['bmi']}\",
-          \"difficultySupport\": \"Apoyo para: {$difficulties}\",
-          \"motivationalElements\": \"Reforzando: {$motivations}\",
-          \"eatingOutGuidance\": \"Guía para comer fuera ({$basicData['preferences']['eats_out']})\",
-          \"ageSpecificAdvice\": \"Recomendaciones para {$basicData['age']} años\"
-        }
+\"lunch\": {},
+\"dinner\": {}
       }
     }
-
-    🔴 RECUERDA:
-    - Presupuesto {$budgetType} = usar SOLO alimentos de ese presupuesto
-    - Los macros DEBEN sumar EXACTAMENTE (usa la fórmula del PASO 2)
-    - Calcula bien las porciones antes de responder
-
-    Genera el plan COMPLETO en español para {$preferredName}.
+    " . __('important') . ":
+    - " . __('3_recipes_very_different') . "
+    - " . __('never_prohibited_ingredients') . "
+    - " . __('macros_exact_close') . "
+    - " . __('creative_appetizing_names') . "
+    - " . __('clear_easy_instructions') . "
+    - " . __('mention_:name_personal_notes', ['name' => $preferredName]) . "
+    " . __('generate_complete_plan_:name', ['name' => $preferredName]) . ".
     ";
     }
 
@@ -383,128 +317,94 @@ class PromptBuilderService
             return "";
         }
 
-        $section = "\n\n🌟🌟🌟 **PREFERENCIAS ALIMENTARIAS DE {$userName}** 🌟🌟🌟\n";
-        $section .= "{$userName} seleccionó estos alimentos como sus FAVORITOS. DEBES priorizarlos:\n\n";
+        $section = "\n\n🌟🌟🌟 **" . __('food_preferences_of_:name', ['name' => $userName]) . "** 🌟🌟🌟\n";
+        $section .= __(':name_selected_these_as_favorites_must_prioritize', ['name' => $userName]) . ":\n\n";
 
         if (!empty($foodPreferences['proteins'])) {
-            $section .= "✅ **PROTEÍNAS FAVORITAS (PRIORIZAR EN OPCIONES 1-2):**\n";
-            $section .= "   " . implode(', ', $foodPreferences['proteins']) . "\n\n";
+            $section .= "✅ **" . __('favorite_proteins_prioritize_1_2') . ":**\n";
+            $section .= " " . implode(', ', $foodPreferences['proteins']) . "\n\n";
         }
 
         if (!empty($foodPreferences['carbs'])) {
-            $section .= "✅ **CARBOHIDRATOS FAVORITOS (PRIORIZAR EN OPCIONES 1-2):**\n";
-            $section .= "   " . implode(', ', $foodPreferences['carbs']) . "\n\n";
+            $section .= "✅ **" . __('favorite_carbs_prioritize_1_2') . ":**\n";
+            $section .= " " . implode(', ', $foodPreferences['carbs']) . "\n\n";
         }
 
         if (!empty($foodPreferences['fats'])) {
-            $section .= "✅ **GRASAS FAVORITAS (PRIORIZAR EN OPCIONES 1-2):**\n";
-            $section .= "   " . implode(', ', $foodPreferences['fats']) . "\n\n";
+            $section .= "✅ **" . __('favorite_fats_prioritize_1_2') . ":**\n";
+            $section .= " " . implode(', ', $foodPreferences['fats']) . "\n\n";
         }
 
         if (!empty($foodPreferences['fruits'])) {
-            $section .= "✅ **FRUTAS FAVORITAS (USAR EN SNACKS):**\n";
-            $section .= "   " . implode(', ', $foodPreferences['fruits']) . "\n\n";
+            $section .= "✅ **" . __('favorite_fruits_use_in_snacks') . ":**\n";
+            $section .= " " . implode(', ', $foodPreferences['fruits']) . "\n\n";
         }
 
-        $section .= "⚠️ **REGLA CRÍTICA DE PRIORIZACIÓN:**\n";
-        $section .= "- Los alimentos favoritos DEBEN aparecer como PRIMERAS opciones\n";
-        $section .= "- Si {$userName} eligió 'Atún' y 'Pollo', entonces:\n";
-        $section .= "  ✅ Opción 1: Atún en lata (200g)\n";
-        $section .= "  ✅ Opción 2: Pollo pechuga o muslo (180g)\n";
-        $section .= "  ✅ Opción 3: Otros alimentos válidos del presupuesto\n";
-        $section .= "- Los alimentos NO favoritos pueden aparecer DESPUÉS\n\n";
+        $section .= "⚠️ **" . __('critical_prioritization_rule') . ":**\n";
+        $section .= "- " . __('favorites_must_appear_as_first_options') . "\n";
+        $section .= "- " . __('if_:name_chose_tuna_and_chicken_then', ['name' => $userName]) . ":\n";
+        $section .= " ✅ " . __('option_1_canned_tuna_200g') . "\n";
+        $section .= " ✅ " . __('option_2_chicken_breast_or_thigh_180g') . "\n";
+        $section .= " ✅ " . __('option_3_other_valid_budget_foods') . "\n";
+        $section .= "- " . __('non_favorites_can_appear_later') . "\n\n";
 
         return $section;
-    }
-
-    private function getAllowedFoodsByBudget($budgetType): array
-    {
-        if ($budgetType === 'ALTO') {
-            return [
-                'proteinas' => ['Claras + Huevo Entero', 'Yogurt griego', 'Proteína whey', 'Pechuga de pollo', 'Salmón', 'Atún fresco'],
-                'carbohidratos' => ['Quinua', 'Avena orgánica', 'Pan integral artesanal', 'Camote', 'arroz blanco'],
-                'grasas' => ['Aceite de oliva extra virgen', 'Almendras', 'Nueces', 'Aguacate hass']
-            ];
-        } else {
-            return [
-                'proteinas' => ['Huevo entero', 'Pollo muslo', 'Atún en lata', 'Carne molida'],
-                'carbohidratos' => ['Arroz blanco', 'Papa', 'Avena tradicional', 'Tortillas de maíz', 'Fideos'],
-                'grasas' => ['Aceite vegetal', 'Maní', 'Aguacate pequeño']
-            ];
-        }
-    }
-
-    private function getProhibitedFoodsByBudget($budgetType): array
-    {
-        if ($budgetType === 'ALTO') {
-            return ['Huevo entero', 'Pollo muslo', 'Atún en lata', 'Aceite vegetal', 'Maní', 'Arroz blanco'];
-        } else {
-            return ['Salmón', 'Pechuga de pollo', 'Quinua', 'Almendras', 'Aceite de oliva extra virgen'];
-        }
     }
 
     private function getDetailedBudgetInstructions($budget, $country): string
     {
         $budgetLevel = strtolower($budget);
 
-        if (str_contains($budgetLevel, 'bajo')) {
-            $baseInstructions = "**PRESUPUESTO BAJO - ALIMENTOS OBLIGATORIOS:**
-
-            **PROTEÍNAS ECONÓMICAS:**
-            - Huevo entero (siempre disponible y económico)
-            - Carne molida (en lugar de cortes premium)
-            - Pollo (muslos/encuentros, NO pechuga)
-            - Pescado económico local (bonito, jurel, caballa - NO salmón)
-            - Atún en lata (opción práctica)
-            - Legumbres: lentejas, frijoles, garbanzos
-
-            **CARBOHIDRATOS BÁSICOS:**
-            - Arroz blanco (base alimentaria)
-            - Fideos/pasta común (opción económica)
-            - Papa (tubérculo básico)
-            - Camote (alternativa nutritiva)
-            - Avena tradicional (no instantánea)
-            - Pan de molde común
-
-            **GRASAS ACCESIBLES:**
-            - Aceite vegetal común (NO aceite de oliva extra virgen)
-            - Maní (en lugar de almendras)
-            - Aguacate pequeño (cuando esté en temporada)
-
-            **PROHIBIDO EN PRESUPUESTO BAJO:**
-            Salmón, lomo de res, pechuga de pollo, almendras, nueces, frutos rojos, quinua importada, yogur griego, quesos premium, aceite de oliva extra virgen, proteína en polvo";
+        if (str_contains($budgetLevel, 'low') || str_contains($budgetLevel, 'bajo')) {
+            $baseInstructions = "**" . __('low_budget_mandatory_foods') . ":**\n";
+            $baseInstructions .= " **" . __('economical_proteins') . ":**\n";
+            $baseInstructions .= " - " . __('whole_egg_always_available_economical') . "\n";
+            $baseInstructions .= " - " . __('ground_beef_instead_premium_cuts') . "\n";
+            $baseInstructions .= " - " . __('chicken_thighs_not_breast') . "\n";
+            $baseInstructions .= " - " . __('local_economical_fish_not_salmon') . "\n";
+            $baseInstructions .= " - " . __('canned_tuna_practical_option') . "\n";
+            $baseInstructions .= " - " . __('legumes_lentils_beans_chickpeas') . "\n";
+            $baseInstructions .= " **" . __('basic_carbs') . ":**\n";
+            $baseInstructions .= " - " . __('white_rice_staple_food') . "\n";
+            $baseInstructions .= " - " . __('common_noodles_pasta') . "\n";
+            $baseInstructions .= " - " . __('potato_basic_tuber') . "\n";
+            $baseInstructions .= " - " . __('sweet_potato_nutritious_alternative') . "\n";
+            $baseInstructions .= " - " . __('traditional_oats_not_instant') . "\n";
+            $baseInstructions .= " - " . __('common_bread') . "\n";
+            $baseInstructions .= " **" . __('accessible_fats') . ":**\n";
+            $baseInstructions .= " - " . __('common_vegetable_oil_not_extra_virgin_olive') . "\n";
+            $baseInstructions .= " - " . __('peanuts_instead_almonds') . "\n";
+            $baseInstructions .= " - " . __('small_avocado_when_in_season') . "\n";
+            $baseInstructions .= " **" . __('forbidden_in_low_budget') . ":**\n";
+            $baseInstructions .= " " . __('salmon_tenderloin_chicken_breast_almonds_extra_virgin_olive_protein_powder') . "\n";
         } else {
-            $baseInstructions = "**PRESUPUESTO ALTO - ALIMENTOS PREMIUM:**
-
-            **PROTEÍNAS PREMIUM:**
-            - Salmón fresco (en lugar de pescado básico)
-            - Lomo de res (en lugar de carne molida)
-            - Pechuga de pollo (corte premium)
-            - Pescados finos (corvina, lenguado, róbalo)
-            - Proteína en polvo (suplementación)
-            - Yogur griego (alta proteína)
-            - Quesos finos y madurados
-
-            **CARBOHIDRATOS GOURMET:**
-            - Quinua (superfood andino)
-            - Avena orgánica
-            - arroz blanco/basmati
-            - Camote morado
-            - Pan artesanal/integral premium
-            - Pasta integral o de legumbres
-
-            **GRASAS PREMIUM:**
-            - Aceite de oliva extra virgen
-            - Almendras, nueces, pistachos
-            - Aguacate hass grande
-            - Aceite de coco orgánico
-            - Semillas premium (chía, linaza)
-
-            **FRUTAS GOURMET:**
-            - Frutos rojos (arándanos, frambuesas)
-            - Frutas importadas de calidad
-            - Frutas orgánicas
-            - Superfoods (açaí, goji)";
+            $baseInstructions = "**" . __('high_budget_premium_foods') . ":**\n";
+            $baseInstructions .= " **" . __('premium_proteins') . ":**\n";
+            $baseInstructions .= " - " . __('fresh_salmon_instead_basic_fish') . "\n";
+            $baseInstructions .= " - " . __('tenderloin_instead_ground_beef') . "\n";
+            $baseInstructions .= " - " . __('chicken_breast_premium_cut') . "\n";
+            $baseInstructions .= " - " . __('fine_fish') . "\n";
+            $baseInstructions .= " - " . __('protein_powder_supplementation') . "\n";
+            $baseInstructions .= " - " . __('greek_yogurt_high_protein') . "\n";
+            $baseInstructions .= " - " . __('fine_cheeses') . "\n";
+            $baseInstructions .= " **" . __('gourmet_carbs') . ":**\n";
+            $baseInstructions .= " - " . __('quinoa_andean_superfood') . "\n";
+            $baseInstructions .= " - " . __('organic_oats') . "\n";
+            $baseInstructions .= " - " . __('basmati_rice') . "\n";
+            $baseInstructions .= " - " . __('purple_sweet_potato') . "\n";
+            $baseInstructions .= " - " . __('artisanal_premium_bread') . "\n";
+            $baseInstructions .= " - " . __('whole_wheat_or_legume_pasta') . "\n";
+            $baseInstructions .= " **" . __('premium_fats') . ":**\n";
+            $baseInstructions .= " - " . __('extra_virgin_olive_oil') . "\n";
+            $baseInstructions .= " - " . __('almonds_walnuts_pistachios') . "\n";
+            $baseInstructions .= " - " . __('large_hass_avocado') . "\n";
+            $baseInstructions .= " - " . __('organic_coconut_oil') . "\n";
+            $baseInstructions .= " - " . __('premium_seeds_chia_flax') . "\n";
+            $baseInstructions .= " **" . __('gourmet_fruits') . ":**\n";
+            $baseInstructions .= " - " . __('berries_blueberries_raspberries') . "\n";
+            $baseInstructions .= " - " . __('imported_quality_fruits') . "\n";
+            $baseInstructions .= " - " . __('organic_fruits') . "\n";
+            $baseInstructions .= " - " . __('superfoods_acai_goji') . "\n";
         }
 
         return $baseInstructions;
@@ -514,53 +414,53 @@ class PromptBuilderService
     {
         $style = strtolower($dietaryStyle);
 
-        if ($style === 'vegano') {
-            return "**OBLIGATORIO VEGANO:**
-            - Solo alimentos de origen vegetal
-            - Proteínas: legumbres, tofu, seitán, quinua, frutos secos, semillas
-            - B12 y hierro: considerar suplementación
-            - Combinar proteínas para aminoácidos completos";
-        } elseif ($style === 'vegetariano') {
-            return "**OBLIGATORIO VEGETARIANO:**
-            - Sin carne ni pescado
-            - Incluye: huevos, lácteos, legumbres, frutos secos
-            - Asegurar hierro y B12 suficientes";
+        if ($style === 'vegan' || $style === 'vegano') {
+            return "**" . __('mandatory_vegan') . ":**\n";
+            return " - " . __('only_plant_based_foods') . "\n";
+            return " - " . __('proteins_legumes_tofu_seitan_quinoa_nuts_seeds') . "\n";
+            return " - " . __('b12_iron_consider_supplementation') . "\n";
+            return " - " . __('combine_proteins_complete_amino_acids') . "\n";
+        } elseif ($style === 'vegetarian' || $style === 'vegetariano') {
+            return "**" . __('mandatory_vegetarian') . ":**\n";
+            return " - " . __('no_meat_no_fish') . "\n";
+            return " - " . __('include_eggs_dairy_legumes_nuts') . "\n";
+            return " - " . __('ensure_sufficient_iron_b12') . "\n";
         } elseif (str_contains($style, 'keto')) {
-            return "**OBLIGATORIO KETO:**
-            - Máximo 50g carbohidratos netos totales
-            - 70% grasas, 25% proteínas, 5% carbohidratos
-            - Priorizar: aguacate, aceites, frutos secos, carnes, pescados grasos
-            - EVITAR: granos, frutas altas en azúcar, tubérculos";
+            return "**" . __('mandatory_keto') . ":**\n";
+            return " - " . __('maximum_50g_net_carbs_total') . "\n";
+            return " - " . __('70_fats_25_protein_5_carbs') . "\n";
+            return " - " . __('prioritize_avocado_oils_nuts_meats_fatty_fish') . "\n";
+            return " - " . __('avoid_grains_high_sugar_fruits_tubers') . "\n";
         }
 
-        return "**OMNÍVORO:** Todos los grupos de alimentos permitidos, priorizando variedad y calidad nutricional.";
+        return "**" . __('omnivore') . ":** " . __('all_food_groups_allowed_prioritizing_variety_quality') . ".";
     }
 
     private function getCommunicationStyleInstructions($communicationStyle, $preferredName): string
     {
         $style = strtolower($communicationStyle);
 
-        if (str_contains($style, 'motivadora')) {
-            return "**COMUNICACIÓN MOTIVADORA:**
-            - Usa frases empoderadoras y desafiantes
-            - Recuerda sus logros y capacidades
-            - Enfócate en el progreso y superación personal
-            - Tono enérgico: '¡{$preferredName}, vas a lograr esto!', '¡Tu fuerza te llevará al éxito!'";
-        } elseif (str_contains($style, 'cercana')) {
-            return "**COMUNICACIÓN CERCANA:**
-            - Tono amigable y comprensivo
-            - Usa su nombre frecuentemente
-            - Comparte consejos como un amigo
-            - Tono cálido: 'Hola {$preferredName}', 'Sabemos que puedes', 'Estamos aquí contigo'";
-        } elseif (str_contains($style, 'directa')) {
-            return "**COMUNICACIÓN DIRECTA:**
-            - Información clara y concisa
-            - Sin rodeos ni frases suaves
-            - Datos específicos y acciones concretas
-            - Tono directo: '{$preferredName}, esto es lo que necesitas hacer', 'Plan claro y simple'";
+        if (str_contains($style, 'motivational') || str_contains($style, 'motivadora')) {
+            return "**" . __('motivational_communication') . ":**\n";
+            return " - " . __('use_empowering_challenging_phrases') . "\n";
+            return " - " . __('remember_achievements_capabilities') . "\n";
+            return " - " . __('focus_on_progress_overcoming') . "\n";
+            return " - " . __('energetic_tone_example', ['name' => $preferredName]) . "\n";
+        } elseif (str_contains($style, 'close') || str_contains($style, 'cercana')) {
+            return "**" . __('close_communication') . ":**\n";
+            return " - " . __('friendly_understanding_tone') . "\n";
+            return " - " . __('use_name_frequently') . "\n";
+            return " - " . __('share_tips_like_a_friend') . "\n";
+            return " - " . __('warm_tone_example', ['name' => $preferredName]) . "\n";
+        } elseif (str_contains($style, 'direct') || str_contains($style, 'directa')) {
+            return "**" . __('direct_communication') . ":**\n";
+            return " - " . __('clear_concise_information') . "\n";
+            return " - " . __('no_beat_around_the_bush') . "\n";
+            return " - " . __('specific_data_concrete_actions') . "\n";
+            return " - " . __('direct_tone_example', ['name' => $preferredName]) . "\n";
         }
 
-        return "**COMUNICACIÓN ADAPTATIVA:** Mezcla todos los estilos según el contexto, siendo versátil.";
+        return "**" . __('adaptive_communication') . ":** " . __('mix_all_styles_versatile') . ".";
     }
 
     private function getCountrySpecificFoods($country, $budget): string
@@ -569,21 +469,21 @@ class PromptBuilderService
         $budgetLower = strtolower($budget);
 
         $budgetFoodMatrix = [
-            'bajo' => [
-                'proteinas' => 'Huevo entero, Atún en lata, Pechuga de pollo, Queso fresco, Pescado bonito, Carne molida común',
-                'carbohidratos' => 'Quinua, Lentejas, Frejoles, Camote, Papa, Arroz blanco, Fideos, Avena, Tortilla de maíz, Pan integral',
-                'grasas' => 'Maní, Mantequilla de maní casera, Semillas de ajonjolí, Aceitunas, Aceite de oliva'
+            'low' => [
+                'proteins' => __('whole_egg_canned_tuna_chicken_breast_fresh_cheese_local_fish_ground_beef'),
+                'carbohydrates' => __('quinoa_lentils_beans_sweet_potato_potato_white_rice_noodles_oats_corn_tortilla_whole_wheat_bread'),
+                'fats' => __('peanuts_homemade_peanut_butter_sesame_seeds_olives_olive_oil')
             ],
-            'alto' => [
-                'proteinas' => 'Claras + Huevo Entero, Proteína en polvo (whey), Yogurt griego alto en proteínas, Pechuga de pollo premium, Pechuga de pavo, Carne de res magra, Salmón fresco, Lenguado fresco',
-                'carbohidratos' => 'Quinua, Lentejas, Frejoles, Camote, Papa, Arroz blanco, Fideos, Avena, Tortilla de maíz, Pan integral',
-                'grasas' => 'Aceite de oliva extra virgen, Aceite de palta, Palta (aguacate Hass), Almendras, Nueces, Pistachos, Pecanas, Semillas de chía orgánicas, Linaza orgánica'
+            'high' => [
+                'proteins' => __('egg_whites_whole_egg_protein_powder_high_protein_greek_yogurt_premium_chicken_breast_turkey_breast_lean_beef_fresh_salmon_fresh_sole'),
+                'carbohydrates' => __('quinoa_lentils_beans_sweet_potato_potato_white_rice_noodles_oats_corn_tortilla_whole_wheat_bread'),
+                'fats' => __('extra_virgin_olive_oil_avocado_oil_hass_avocado_almonds_walnuts_pistachios_pecans_organic_chia_seeds_organic_flaxseed_peanut_butter_honey_dark_chocolate_70')
             ]
         ];
 
-        $budgetLevel = str_contains($budgetLower, 'bajo') ? 'bajo' : 'alto';
+        $budgetLevel = str_contains($budgetLower, 'low') || str_contains($budgetLower, 'bajo') ? 'low' : 'high';
         $foods = $budgetFoodMatrix[$budgetLevel];
 
-        return "**INGREDIENTES ESPECÍFICOS DE " . strtoupper($country) . ":**\nProteínas: {$foods['proteinas']}\nCarbohidratos: {$foods['carbohidratos']}\nGrasas: {$foods['grasas']}";
+        return "**" . __('specific_ingredients_from_:country_upper', ['country' => strtoupper($country)]) . ":**\n" . __('proteins_:proteins', ['proteins' => $foods['proteins']]) . "\n" . __('carbohydrates_:carbs', ['carbs' => $foods['carbohydrates']]) . "\n" . __('fats_:fats', ['fats' => $foods['fats']]);
     }
 }

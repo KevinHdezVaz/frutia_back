@@ -28,19 +28,19 @@ class PlanValidationService
 
         while ($attempt < $maxAttempts) {
             $attempt++;
-            Log::info("Intento #{$attempt} de generar plan válido", ['userId' => $profile->user_id]);
+            Log::info("Attempt #{$attempt} to generate valid plan", ['userId' => $profile->user_id]);
 
             $planData = $this->generateUltraPersonalizedNutritionalPlan($profile, $nutritionalData, $userName, $attempt);
 
             if ($planData === null) {
-                Log::warning("La IA no generó un plan válido en intento #{$attempt}", ['userId' => $profile->user_id]);
+                Log::warning("AI did not generate a valid plan on attempt #{$attempt}", ['userId' => $profile->user_id]);
                 continue;
             }
 
             $validation = $this->validateGeneratedPlan($planData, $nutritionalData);
 
             if ($validation['is_valid']) {
-                Log::info('✅ Plan con IA validado exitosamente', [
+                Log::info('✅ AI plan validated successfully', [
                     'userId' => $profile->user_id,
                     'attempt' => $attempt,
                     'total_macros' => $validation['total_macros']
@@ -54,7 +54,7 @@ class PlanValidationService
 
                 if (isset($planData['nutritionPlan']['meals'])) {
                     if (!empty($dislikedFoods)) {
-                        Log::info("Aplicando filtro de preferencias al plan de IA", [
+                        Log::info("Applying preferences filter to AI plan", [
                             'user_id' => $profile->user_id,
                             'disliked_foods' => $dislikedFoods
                         ]);
@@ -65,7 +65,7 @@ class PlanValidationService
                     }
 
                     if (!empty($allergies)) {
-                        Log::warning("🚨 Aplicando filtro de ALERGIAS al plan de IA", [
+                        Log::warning("🚨 Applying ALLERGIES filter to AI plan", [
                             'user_id' => $profile->user_id,
                             'allergies' => $allergies
                         ]);
@@ -79,13 +79,13 @@ class PlanValidationService
                 return $planData;
             }
 
-            Log::warning("Plan inválido en intento #{$attempt}", [
+            Log::warning("Invalid plan on attempt #{$attempt}", [
                 'userId' => $profile->user_id,
                 'errors' => $validation['errors']
             ]);
         }
 
-        Log::info('🔄 Usando plan determinístico optimizado (backup garantizado)', ['userId' => $profile->user_id]);
+        Log::info('🔄 Using optimized deterministic plan (guaranteed backup)', ['userId' => $profile->user_id]);
         return $this->mealGenerationService->generateDeterministicPlan($nutritionalData, $profile, $userName);
     }
 
@@ -99,14 +99,14 @@ class PlanValidationService
         if (!isset($planData['nutritionPlan']['meals'])) {
             return [
                 'is_valid' => false,
-                'errors' => ['Estructura del plan inválida'],
+                'errors' => ['Invalid plan structure'],
                 'warnings' => [],
                 'total_macros' => $totalMacros
             ];
         }
 
         $budget = strtolower($nutritionalData['basic_data']['preferences']['budget'] ?? '');
-        $isLowBudget = str_contains($budget, 'bajo');
+        $isLowBudget = str_contains($budget, 'low') || str_contains($budget, 'bajo');
 
         foreach ($planData['nutritionPlan']['meals'] as $mealName => $mealData) {
             foreach ($mealData as $category => $categoryData) {
@@ -115,6 +115,7 @@ class PlanValidationService
                 }
 
                 $firstOption = $categoryData['options'][0] ?? null;
+
                 if ($firstOption) {
                     $totalMacros['protein'] += $firstOption['protein'] ?? 0;
                     $totalMacros['carbs'] += $firstOption['carbohydrates'] ?? 0;
@@ -127,18 +128,20 @@ class PlanValidationService
 
                     foreach ($categoryData['options'] as $option) {
                         $foodName = strtolower($option['name'] ?? '');
+
                         if (!isset($foodAppearances[$foodName])) {
                             $foodAppearances[$foodName] = [];
                         }
+
                         $foodAppearances[$foodName][] = $mealName;
 
                         if ($isLowBudget) {
                             if ($this->foodCalculationService->isFoodHighBudget($foodName)) {
-                                $errors[] = "Alimento de presupuesto alto en plan bajo: {$option['name']} en {$mealName}";
+                                $errors[] = "High-budget food in low-budget plan: {$option['name']} in {$mealName}";
                             }
                         } else {
                             if ($this->foodCalculationService->isFoodLowBudget($foodName)) {
-                                $warnings[] = "Alimento de presupuesto bajo en plan alto: {$option['name']} en {$mealName}";
+                                $warnings[] = "Low-budget food in high-budget plan: {$option['name']} in {$mealName}";
                             }
                         }
                     }
@@ -147,6 +150,7 @@ class PlanValidationService
         }
 
         $mealsWithEggs = [];
+
         foreach ($planData['nutritionPlan']['meals'] as $mealName => $mealData) {
             $hasEggInMeal = false;
 
@@ -170,7 +174,7 @@ class PlanValidationService
         }
 
         if (count($mealsWithEggs) > 1) {
-            $errors[] = 'Huevos aparecen en múltiples comidas (máximo 1 vez al día): ' . implode(', ', $mealsWithEggs);
+            $errors[] = 'Eggs appear in multiple meals (maximum once per day): ' . implode(', ', $mealsWithEggs);
         }
 
         $allergies = $nutritionalData['basic_data']['health_status']['allergies'] ?? '';
@@ -190,10 +194,8 @@ class PlanValidationService
 
                             if (str_contains($foodName, $allergenNormalized) ||
                                 str_contains($allergenNormalized, $foodName)) {
-
-                                $errors[] = "❌ CRÍTICO: '{$option['name']}' contiene alérgeno MORTAL '{$allergen}' en {$mealName}/{$category}";
-
-                                Log::error("🚨 ALERGIA DETECTADA EN PLAN GENERADO", [
+                                $errors[] = "❌ CRITICAL: '{$option['name']}' contains DEADLY allergen '{$allergen}' in {$mealName}/{$category}";
+                                Log::error("🚨 ALLERGY DETECTED IN GENERATED PLAN", [
                                     'food' => $option['name'],
                                     'allergen' => $allergen,
                                     'meal' => $mealName,
@@ -206,13 +208,13 @@ class PlanValidationService
             }
         }
 
-        if (isset($planData['nutritionPlan']['meals']['Desayuno'])) {
-            foreach ($planData['nutritionPlan']['meals']['Desayuno'] as $category => $categoryData) {
+        if (isset($planData['nutritionPlan']['meals']['breakfast'])) {
+            foreach ($planData['nutritionPlan']['meals']['breakfast'] as $category => $categoryData) {
                 foreach ($categoryData['options'] ?? [] as $option) {
                     $foodName = strtolower($option['name'] ?? '');
-                    if (str_contains($foodName, 'quinua') || str_contains($foodName, 'quinoa')) {
-                        $errors[] = "❌ CRÍTICO: Quinua no permitida en desayuno (solo almuerzo/cena)";
-                        Log::error("Quinua detectada en desayuno", [
+                    if (str_contains($foodName, 'quinoa')) {
+                        $errors[] = "❌ CRITICAL: Quinoa not allowed in breakfast (only lunch/dinner)";
+                        Log::error("Quinoa detected in breakfast", [
                             'option' => $option,
                             'category' => $category
                         ]);
@@ -222,16 +224,16 @@ class PlanValidationService
         }
 
         $lessPreferredInPlan = [];
+
         foreach ($planData['nutritionPlan']['meals'] as $mealName => $mealData) {
             foreach ($mealData as $category => $categoryData) {
-                if ($category === 'Carbohidratos' || $category === 'Grasas') {
+                if ($category === 'Carbs' || $category === 'Fats') {
                     foreach ($categoryData['options'] ?? [] as $index => $option) {
                         $foodName = strtolower($option['name'] ?? '');
-
-                        $leastPreferred = ['camote', 'maní', 'mantequilla de maní'];
+                        $leastPreferred = ['sweet potato', 'peanuts', 'peanut butter'];
                         foreach ($leastPreferred as $lp) {
                             if (str_contains($foodName, $lp) && $index === 0) {
-                                $warnings[] = "Alimento menos preferido '{$option['name']}' en primera opción de {$mealName}/{$category}";
+                                $warnings[] = "Less preferred food '{$option['name']}' in first option of {$mealName}/{$category}";
                                 $lessPreferredInPlan[] = "{$mealName} - {$option['name']}";
                             }
                         }
@@ -241,14 +243,14 @@ class PlanValidationService
         }
 
         foreach ($planData['nutritionPlan']['meals'] as $mealName => $mealData) {
-            if (isset($mealData['Carbohidratos']['options'])) {
-                foreach ($mealData['Carbohidratos']['options'] as $option) {
+            if (isset($mealData['Carbs']['options'])) {
+                foreach ($mealData['Carbs']['options'] as $option) {
                     $foodName = strtolower($option['name'] ?? '');
                     $portion = $option['portion'] ?? '';
 
-                    $mustBeCooked = ['papa', 'arroz', 'camote', 'fideo', 'frijol', 'quinua', 'quinoa', 'pan', 'tortilla', 'galleta'];
-
+                    $mustBeCooked = ['potato', 'rice', 'sweet potato', 'noodles', 'beans', 'quinoa', 'bread', 'tortilla', 'rice crackers'];
                     $shouldBeCooked = false;
+
                     foreach ($mustBeCooked as $food) {
                         if (str_contains($foodName, $food)) {
                             $shouldBeCooked = true;
@@ -256,35 +258,35 @@ class PlanValidationService
                         }
                     }
 
-                    $isCooked = str_contains(strtolower($portion), 'cocido');
-                    $isRaw = str_contains(strtolower($portion), 'crudo') || str_contains(strtolower($portion), 'seco');
+                    $isCooked = str_contains(strtolower($portion), 'cooked');
+                    $isRaw = str_contains(strtolower($portion), 'raw') || str_contains(strtolower($portion), 'dry');
 
                     if ($shouldBeCooked && $isRaw) {
-                        $errors[] = "{$option['name']} debe estar en peso cocido, no crudo";
+                        $errors[] = "{$option['name']} should be cooked weight, not raw";
                     }
 
-                    if ((str_contains($foodName, 'avena') || str_contains($foodName, 'crema de arroz')) && $isCooked) {
-                        $errors[] = "{$option['name']} debe estar en peso seco/crudo, no cocido";
+                    if ((str_contains($foodName, 'oats') || str_contains($foodName, 'cream of rice')) && $isCooked) {
+                        $errors[] = "{$option['name']} should be dry/raw weight, not cooked";
                     }
                 }
             }
         }
 
-        $mainMeals = ['Desayuno', 'Almuerzo', 'Cena'];
+        $mainMeals = ['breakfast', 'lunch', 'dinner'];
 
         foreach ($mainMeals as $mealName) {
-            if (isset($planData['nutritionPlan']['meals'][$mealName]['Vegetales'])) {
-                $vegetableCalories = $planData['nutritionPlan']['meals'][$mealName]['Vegetales']['options'][0]['calories'] ?? 0;
+            if (isset($planData['nutritionPlan']['meals'][$mealName]['Vegetables'])) {
+                $vegetableCalories = $planData['nutritionPlan']['meals'][$mealName]['Vegetables']['options'][0]['calories'] ?? 0;
 
                 if ($vegetableCalories < 100) {
-                    $warnings[] = "{$mealName} tiene solo {$vegetableCalories} kcal en vegetales (mínimo requerido: 100 kcal)";
+                    $warnings[] = "{$mealName} has only {$vegetableCalories} kcal in vegetables (minimum required: 100 kcal)";
                 }
 
                 if ($vegetableCalories > 150) {
-                    $warnings[] = "{$mealName} tiene {$vegetableCalories} kcal en vegetales (máximo recomendado: 150 kcal)";
+                    $warnings[] = "{$mealName} has {$vegetableCalories} kcal in vegetables (maximum recommended: 150 kcal)";
                 }
             } else {
-                $errors[] = "{$mealName} NO incluye vegetales (mínimo obligatorio: 100 kcal)";
+                $errors[] = "{$mealName} does NOT include vegetables (minimum required: 100 kcal)";
             }
         }
 
@@ -297,7 +299,7 @@ class PlanValidationService
 
         if ($proteinDiff > $targetMacros['protein']['grams'] * $tolerance) {
             $errors[] = sprintf(
-                'Proteína fuera de rango: objetivo %dg, obtenido %dg (diff: %dg)',
+                'Protein out of range: target %dg, obtained %dg (diff: %dg)',
                 $targetMacros['protein']['grams'],
                 $totalMacros['protein'],
                 $proteinDiff
@@ -306,7 +308,7 @@ class PlanValidationService
 
         if ($carbsDiff > $targetMacros['carbohydrates']['grams'] * $tolerance) {
             $errors[] = sprintf(
-                'Carbohidratos fuera de rango: objetivo %dg, obtenido %dg (diff: %dg)',
+                'Carbohydrates out of range: target %dg, obtained %dg (diff: %dg)',
                 $targetMacros['carbohydrates']['grams'],
                 $totalMacros['carbs'],
                 $carbsDiff
@@ -315,7 +317,7 @@ class PlanValidationService
 
         if ($fatsDiff > $targetMacros['fats']['grams'] * $tolerance) {
             $errors[] = sprintf(
-                'Grasas fuera de rango: objetivo %dg, obtenido %dg (diff: %dg)',
+                'Fats out of range: target %dg, obtained %dg (diff: %dg)',
                 $targetMacros['fats']['grams'],
                 $totalMacros['fats'],
                 $fatsDiff
@@ -328,20 +330,21 @@ class PlanValidationService
 
             if ($totalMacros['fiber'] < $targetFiber * 0.8) {
                 $warnings[] = sprintf(
-                    'Fibra baja: %dg (objetivo: %dg diarios)',
+                    'Low fiber: %dg (daily target: %dg)',
                     $totalMacros['fiber'],
                     $targetFiber
                 );
             }
         }
 
-        $mealDistribution = ['Desayuno' => 0.30, 'Almuerzo' => 0.40, 'Cena' => 0.30];
+        $mealDistribution = ['breakfast' => 0.30, 'lunch' => 0.40, 'dinner' => 0.30];
+
         foreach ($planData['nutritionPlan']['meals'] as $mealName => $mealData) {
             if (isset($mealDistribution[$mealName])) {
                 $expectedPercentage = $mealDistribution[$mealName];
                 $expectedCalories = $targetMacros['calories'] * $expectedPercentage;
-
                 $mealCalories = 0;
+
                 foreach ($mealData as $category => $categoryData) {
                     if (isset($categoryData['options'][0])) {
                         $mealCalories += $categoryData['options'][0]['calories'] ?? 0;
@@ -349,9 +352,10 @@ class PlanValidationService
                 }
 
                 $calorieDiff = abs($mealCalories - $expectedCalories);
+
                 if ($calorieDiff > $expectedCalories * 0.15) {
                     $warnings[] = sprintf(
-                        '%s desequilibrado: esperado ~%d kcal, tiene %d kcal',
+                        '%s unbalanced: expected ~%d kcal, has %d kcal',
                         $mealName,
                         round($expectedCalories),
                         $mealCalories
@@ -389,11 +393,12 @@ class PlanValidationService
             return $planData;
         }
 
-        Log::error("Fallo en la llamada a OpenAI para generar plan personalizado", [
+        Log::error("Failure in OpenAI call to generate personalized plan", [
             'status' => $response->status(),
             'body' => $response->body(),
             'attempt' => $attemptNumber
         ]);
+
         return null;
     }
 
@@ -420,8 +425,7 @@ class PlanValidationService
 
                             if (str_contains($foodNameNormalized, $dislikedNormalized) ||
                                 str_contains($dislikedNormalized, $foodNameNormalized)) {
-
-                                Log::info("❌ Opción filtrada por preferencia del usuario", [
+                                Log::info("❌ Option filtered by user preference", [
                                     'food_option' => $option['name'],
                                     'matches_disliked' => $disliked,
                                     'category' => $category
@@ -429,6 +433,7 @@ class PlanValidationService
                                 return false;
                             }
                         }
+
                         return true;
                     }
                 );
@@ -436,7 +441,7 @@ class PlanValidationService
                 $categoryData['options'] = array_values($filteredOptions);
 
                 if (empty($categoryData['options'])) {
-                    Log::warning("⚠️ Categoría sin opciones después de filtrar", [
+                    Log::warning("⚠️ Category without options after filtering", [
                         'category' => $category,
                         'disliked_foods' => $dislikedFoods
                     ]);
@@ -445,6 +450,42 @@ class PlanValidationService
         }
 
         return $mealOptions;
+    }
+
+    private function getFilteredFoodOptions(
+        array $foodList,
+        string $dislikedFoods,
+        string $allergies,
+        int $maxOptions = 4
+    ): array {
+        if (!empty($allergies)) {
+            $foodList = $this->filterAllergens($foodList, $allergies);
+            Log::info("🚨 Foods after filtering allergies", [
+                'remaining' => $foodList,
+                'allergies' => $allergies
+            ]);
+        }
+
+        if (!empty($dislikedFoods)) {
+            $foodList = $this->filterFoodOptions($foodList, $dislikedFoods, count($foodList));
+            Log::info("❌ Foods after filtering preferences", [
+                'remaining' => $foodList,
+                'disliked' => $dislikedFoods
+            ]);
+        }
+
+        $result = array_slice($foodList, 0, $maxOptions);
+
+        if (empty($result)) {
+            Log::warning("⚠️ All foods filtered, using fallback", [
+                'original_list' => $foodList,
+                'allergies' => $allergies,
+                'disliked' => $dislikedFoods
+            ]);
+            return ['White rice', 'Potato', 'Beans'];
+        }
+
+        return $result;
     }
 
     private function filterAllergens(array $foodList, string $allergies): array
@@ -470,11 +511,10 @@ class PlanValidationService
                     $this->foodCalculationService->containsAllKeywords($foodNormalized, $allergenNormalized);
 
                 if ($isMatch) {
-                    Log::warning("🚨 Alimento filtrado por ALERGIA", [
+                    Log::warning("🚨 Food filtered by ALLERGY", [
                         'food' => $food,
                         'allergen' => $allergen
                     ]);
-
                     $isAllergen = true;
                     break;
                 }
@@ -486,12 +526,11 @@ class PlanValidationService
         }
 
         if (empty($filtered)) {
-            Log::error("⚠️ TODOS los alimentos fueron filtrados por alergias", [
+            Log::error("⚠️ ALL foods filtered by allergies", [
                 'original_list' => $foodList,
                 'allergies' => $allergies
             ]);
-
-            return ['Arroz blanco', 'Papa', 'Lentejas'];
+            return ['White rice', 'Potato', 'Beans'];
         }
 
         return $filtered;
@@ -518,13 +557,12 @@ class PlanValidationService
                         $this->foodCalculationService->containsAllKeywords($foodNormalized, $dislikedNormalized);
 
                     if ($isMatch) {
-                        Log::info("❌ Alimento filtrado por preferencia", [
+                        Log::info("❌ Food filtered by preference", [
                             'food' => $food,
                             'disliked' => $disliked,
                             'food_normalized' => $foodNormalized,
                             'disliked_normalized' => $dislikedNormalized
                         ]);
-
                         $isDisliked = true;
                         break;
                     }
@@ -539,7 +577,7 @@ class PlanValidationService
         }
 
         if (empty($filtered)) {
-            Log::warning("⚠️ Todos los alimentos fueron filtrados", [
+            Log::warning("⚠️ All foods filtered", [
                 'original_list' => $foodList,
                 'disliked_foods' => $dislikedFoods
             ]);
@@ -548,52 +586,13 @@ class PlanValidationService
         return empty($filtered) ? array_slice($foodList, 0, $maxOptions) : $filtered;
     }
 
-    private function getFilteredFoodOptions(
-        array $foodList,
-        string $dislikedFoods,
-        string $allergies,
-        int $maxOptions = 4
-    ): array {
-        if (!empty($allergies)) {
-            $foodList = $this->filterAllergens($foodList, $allergies);
-
-            Log::info("🚨 Alimentos después de filtrar alergias", [
-                'remaining' => $foodList,
-                'allergies' => $allergies
-            ]);
-        }
-
-        if (!empty($dislikedFoods)) {
-            $foodList = $this->filterFoodOptions($foodList, $dislikedFoods, count($foodList));
-
-            Log::info("❌ Alimentos después de filtrar gustos", [
-                'remaining' => $foodList,
-                'disliked' => $dislikedFoods
-            ]);
-        }
-
-        $result = array_slice($foodList, 0, $maxOptions);
-
-        if (empty($result)) {
-            Log::warning("⚠️ Todos los alimentos fueron filtrados, usando fallback", [
-                'original_list' => func_get_arg(0),
-                'allergies' => $allergies,
-                'disliked' => $dislikedFoods
-            ]);
-
-            return ['Arroz blanco', 'Papa', 'Lentejas'];
-        }
-
-        return $result;
-    }
-
     private function applyFoodPreferenceSystem($foodList, $mealType, $dislikedFoods, $minOptions = 3): array
     {
         $leastPreferredFoods = [
-            'Camote',
-            'Maní',
-            'Mantequilla de maní',
-            'Mantequilla de maní casera'
+            'Sweet potato',
+            'Peanuts',
+            'Peanut butter',
+            'Homemade peanut butter'
         ];
 
         $filtered = $this->filterFoodOptions($foodList, $dislikedFoods, count($foodList));
@@ -603,6 +602,7 @@ class PlanValidationService
 
         foreach ($filtered as $food) {
             $isLessPreferred = false;
+
             foreach ($leastPreferredFoods as $leastPref) {
                 if (str_contains(strtolower($food), strtolower($leastPref))) {
                     $lessPreferred[] = $food;
@@ -617,7 +617,7 @@ class PlanValidationService
         }
 
         if (count($preferred) >= $minOptions) {
-            Log::info("Usando solo alimentos preferidos para {$mealType}", [
+            Log::info("Using only preferred foods for {$mealType}", [
                 'preferred' => $preferred,
                 'excluded' => $lessPreferred
             ]);
@@ -626,7 +626,7 @@ class PlanValidationService
 
         $result = array_merge($preferred, $lessPreferred);
 
-        Log::info("Complementando con alimentos menos preferidos para {$mealType}", [
+        Log::info("Supplementing with less preferred foods for {$mealType}", [
             'preferred_count' => count($preferred),
             'less_preferred_used' => array_slice($lessPreferred, 0, $minOptions - count($preferred))
         ]);
@@ -656,11 +656,10 @@ class PlanValidationService
                     $this->foodCalculationService->areNamesEquivalent($foodNormalized, $favNormalized) ||
                     $this->isSimilarProtein($foodNormalized, $favNormalized)
                 ) {
-                    Log::info("✅ Alimento marcado como favorito", [
+                    Log::info("✅ Food marked as favorite", [
                         'food' => $food,
                         'favorite' => $favName
                     ]);
-
                     $isFavorite = true;
                     break;
                 }
@@ -673,7 +672,7 @@ class PlanValidationService
             }
         }
 
-        Log::info("Resultado de priorización", [
+        Log::info("Prioritization result", [
             'total_foods' => count($foodList),
             'favorites_found' => count($favorites),
             'others' => count($others),
@@ -686,10 +685,10 @@ class PlanValidationService
     private function isSimilarProtein(string $food, string $favorite): bool
     {
         $proteinEquivalences = [
-            'caseina' => ['caseina', 'proteina en polvo', 'proteina'],
-            'whey' => ['whey', 'proteina whey', 'proteina en polvo'],
-            'yogurt griego' => ['yogurt griego', 'yogur griego', 'yogurt griego alto en proteinas'],
-            'claras' => ['Claras + Huevo Entero', 'claras pasteurizadas', 'clara de huevo'],
+            'casein' => ['casein', 'protein powder', 'protein'],
+            'whey' => ['whey', 'whey protein', 'protein powder'],
+            'greek yogurt' => ['greek yogurt', 'high-protein greek yogurt'],
+            'egg whites' => ['egg whites + whole egg', 'pasteurized egg whites'],
         ];
 
         foreach ($proteinEquivalences as $key => $variants) {
@@ -710,7 +709,7 @@ class PlanValidationService
     }
 
     private function getForcedFavoritesForMeal(
-        string $mealName,
+        string $mealKey,
         string $category,
         array $userFavorites
     ): array {
@@ -718,32 +717,32 @@ class PlanValidationService
 
         $mealRules = [
             'proteins' => [
-                'Desayuno' => ['Yogurt Griego', 'Proteína Whey', 'Caseína', 'Huevo', 'Claras'],
-                'Almuerzo' => ['Pollo', 'Atún', 'Carne', 'Res', 'Pavo', 'Pescado'],
-                'Cena' => ['Pollo', 'Atún', 'Carne', 'Res', 'Pavo', 'Pescado'],
-                'Snack' => ['Yogurt Griego', 'Proteína Whey', 'Caseína', 'Proteína en polvo']
+                'breakfast' => ['Greek yogurt', 'Whey protein', 'Casein', 'Egg', 'Egg whites'],
+                'lunch' => ['Chicken', 'Tuna', 'Beef', 'Turkey', 'Fish'],
+                'dinner' => ['Chicken', 'Tuna', 'Beef', 'Turkey', 'Fish'],
+                'snack' => ['Greek yogurt', 'Whey protein', 'Casein', 'Protein powder']
             ],
             'carbs' => [
-                'Desayuno' => ['Avena', 'Pan', 'Tortilla'],
-                'Almuerzo' => ['Arroz', 'Papa', 'Camote', 'Quinua', 'Fideo', 'Pasta'],
-                'Cena' => ['Arroz', 'Papa', 'Camote', 'Quinua', 'Fideo', 'Pasta'],
-                'Snack' => ['Avena', 'Galletas', 'Cereal']
+                'breakfast' => ['Oats', 'Bread', 'Tortilla'],
+                'lunch' => ['Rice', 'Potato', 'Sweet potato', 'Quinoa', 'Noodles', 'Pasta'],
+                'dinner' => ['Rice', 'Potato', 'Sweet potato', 'Quinoa', 'Noodles', 'Pasta'],
+                'snack' => ['Oats', 'Rice crackers', 'Corn cereal']
             ],
             'fats' => [
-                'Desayuno' => ['Aceite', 'Aguacate', 'Palta', 'Almendras', 'Nueces', 'Maní'],
-                'Almuerzo' => ['Aceite', 'Aguacate', 'Palta', 'Almendras', 'Nueces', 'Maní'],
-                'Cena' => ['Aceite', 'Aguacate', 'Palta', 'Almendras', 'Nueces', 'Maní'],
-                'Snack' => ['Maní', 'Mantequilla', 'Almendras', 'Nueces']
+                'breakfast' => ['Oil', 'Avocado', 'Almonds', 'Walnuts', 'Peanuts'],
+                'lunch' => ['Oil', 'Avocado', 'Almonds', 'Walnuts', 'Peanuts'],
+                'dinner' => ['Oil', 'Avocado', 'Almonds', 'Walnuts', 'Peanuts'],
+                'snack' => ['Peanuts', 'Peanut butter', 'Almonds', 'Walnuts']
             ]
         ];
 
-        $mealType = 'Desayuno';
-        if (str_contains($mealName, 'Almuerzo')) $mealType = 'Almuerzo';
-        elseif (str_contains($mealName, 'Cena')) $mealType = 'Cena';
-        elseif (str_contains($mealName, 'Snack')) $mealType = 'Snack';
+        $mealType = 'breakfast';
+        if (str_contains($mealKey, 'lunch')) $mealType = 'lunch';
+        elseif (str_contains($mealKey, 'dinner')) $mealType = 'dinner';
+        elseif (str_contains($mealKey, 'snack')) $mealType = 'snack';
 
-        $categoryKey = $category === 'Proteínas' ? 'proteins' :
-            ($category === 'Carbohidratos' ? 'carbs' : 'fats');
+        $categoryKey = $category === 'Proteins' ? 'proteins' :
+            ($category === 'Carbs' ? 'carbs' : 'fats');
 
         $allowedKeywords = $mealRules[$categoryKey][$mealType] ?? [];
 
@@ -775,41 +774,38 @@ class PlanValidationService
         }
 
         $nameMapping = [
-            'Yogurt Griego' => ['Yogurt griego alto en proteínas', 'Yogurt griego'],
-            'Caseína' => ['Caseína', 'Proteína en polvo'],
-            'Proteína Whey' => ['Proteína whey', 'Proteína en polvo'],
-            'Pollo' => ['Pechuga de pollo', 'Pollo muslo'],
-            'Atún' => ['Atún en lata', 'Atún fresco'],
-            'Carne' => ['Carne de res magra', 'Carne molida'],
-            'Res' => ['Carne de res magra', 'Carne molida'],
-            'Pavo' => ['Pechuga de pavo'],
-            'Pescado' => ['Pescado blanco', 'Salmón fresco'],
-            'Papa' => ['Papa'],
-            'Arroz' => ['Arroz blanco', 'arroz blanco'],
-            'Camote' => ['Camote'],
-            'Quinua' => ['Quinua'],
-            'Avena' => ['Avena orgánica', 'Avena tradicional', 'Avena'],
-            'Tortilla' => ['Tortilla de maíz'],
-            'Pan' => ['Pan integral artesanal', 'Pan integral'],
-            'Galletas' => ['Galletas de arroz'],
-            'Fideo' => ['Fideo'],
-            'Pasta' => ['Pasta integral'],
-            'Aceite De Oliva' => ['Aceite de oliva extra virgen', 'Aceite de oliva'],
-            'Aceite De Palta' => ['Aguacate hass', 'Aguacate'],
-            'Aguacate' => ['Aguacate hass', 'Aguacate'],
-            'Palta' => ['Aguacate hass', 'Aguacate'],
-            'Nueces' => ['Nueces'],
-            'Almendras' => ['Almendras'],
-            'Chía' => ['Semillas de chía orgánicas'],
-            'Maní' => ['Maní', 'Mantequilla de maní']
+            'Greek yogurt' => ['High-protein Greek yogurt', 'Greek yogurt'],
+            'Casein' => ['Casein', 'Protein powder'],
+            'Whey protein' => ['Whey protein', 'Protein powder'],
+            'Chicken' => ['Chicken breast', 'Chicken thigh'],
+            'Tuna' => ['Canned tuna', 'Fresh tuna'],
+            'Beef' => ['Lean beef', 'Ground beef'],
+            'Turkey' => ['Turkey breast'],
+            'Fish' => ['White fish', 'Fresh salmon'],
+            'Potato' => ['Potato'],
+            'Rice' => ['White rice'],
+            'Sweet potato' => ['Sweet potato'],
+            'Quinoa' => ['Quinoa'],
+            'Oats' => ['Oats', 'Organic oats'],
+            'Tortilla' => ['Corn tortilla'],
+            'Bread' => ['Whole wheat bread', 'Artisanal whole wheat bread'],
+            'Rice crackers' => ['Rice crackers'],
+            'Noodles' => ['Noodles'],
+            'Pasta' => ['Whole wheat pasta'],
+            'Olive oil' => ['Extra virgin olive oil', 'Olive oil'],
+            'Avocado' => ['Hass avocado', 'Avocado'],
+            'Walnuts' => ['Walnuts'],
+            'Almonds' => ['Almonds'],
+            'Chia' => ['Organic chia seeds'],
+            'Peanuts' => ['Peanuts', 'Peanut butter']
         ];
 
         $missingFavorites = [];
 
         foreach ($forcedFavorites as $favorite) {
             $favoriteNormalized = $this->foodCalculationService->normalizeText($favorite);
-
             $foundInList = false;
+
             foreach ($currentOptions as $option) {
                 $optionNormalized = $this->foodCalculationService->normalizeText($option);
                 if (str_contains($optionNormalized, $favoriteNormalized) ||
@@ -822,23 +818,18 @@ class PlanValidationService
             if (!$foundInList) {
                 foreach ($nameMapping as $userKey => $systemNames) {
                     $userKeyNormalized = $this->foodCalculationService->normalizeText($userKey);
-
                     if (str_contains($favoriteNormalized, $userKeyNormalized) ||
                         str_contains($userKeyNormalized, $favoriteNormalized)) {
-
                         foreach ($systemNames as $systemName) {
                             $systemNormalized = $this->foodCalculationService->normalizeText($systemName);
-
                             $isAllergic = !empty($allergies) &&
                                 $this->foodCalculationService->containsAllKeywords($systemNormalized, $this->foodCalculationService->removeAccents(strtolower($allergies)));
-
                             $isDisliked = !empty($dislikedFoods) &&
                                 $this->foodCalculationService->containsAllKeywords($systemNormalized, $this->foodCalculationService->removeAccents(strtolower($dislikedFoods)));
 
                             if (!$isAllergic && !$isDisliked) {
                                 $missingFavorites[] = $systemName;
-
-                                Log::info("✅ Favorito FORZADO agregado", [
+                                Log::info("✅ Forced favorite added", [
                                     'user_favorite' => $favorite,
                                     'system_name' => $systemName
                                 ]);
@@ -853,5 +844,4 @@ class PlanValidationService
 
         return array_merge($missingFavorites, $currentOptions);
     }
-
 }

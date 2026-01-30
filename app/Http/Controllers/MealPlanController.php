@@ -15,48 +15,72 @@ class MealPlanController extends Controller
     /**
      * Obtener el plan activo del usuario
      */
-    public function getActivePlan(Request $request)
-    {
-        try {
-            $user = Auth::user();
+ 
+    /**
+ * Obtener el plan activo del usuario
+ */
+public function getActivePlan(Request $request)
+{
+    try {
+        $user = Auth::user();
 
-            $mealPlan = MealPlan::where('user_id', $user->id)
-                ->where('is_active', true)
-                ->first();
+        $mealPlan = MealPlan::where('user_id', $user->id)
+            ->where('is_active', true)
+            ->first();
 
-            if (!$mealPlan) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'No se encontró un plan activo'
-                ], 404);
-            }
-
-            // Incluir datos de validación si existen
-            $planData = $mealPlan->plan_data;
-            $planData['validation_status'] = $mealPlan->validation_data['is_valid'] ?? false;
-            $planData['generation_method'] = $mealPlan->generation_method;
-
-            return response()->json([
-                'status' => 'success',
-                'data' => $planData,
-                'nutritional_data' => $mealPlan->nutritional_data,
-                'personalization_data' => $mealPlan->personalization_data,
-                'created_at' => $mealPlan->created_at,
-                'updated_at' => $mealPlan->updated_at
-            ]);
-
-        } catch (\Exception $e) {
-            Log::error('Error al obtener plan activo', [
-                'user_id' => Auth::id(),
-                'error' => $e->getMessage()
-            ]);
-
+        if (!$mealPlan) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Error al obtener el plan'
+                'message' => 'No se encontró un plan activo'
+            ], 404);
+        }
+
+        // ⭐ DECODIFICAR EL JSON GUARDADO EN plan_data
+        $fullPlan = json_decode($mealPlan->plan_data, true);
+
+        if (!is_array($fullPlan)) {
+            Log::error('plan_data no es un JSON válido', [
+                'user_id' => $user->id,
+                'raw_plan_data' => $mealPlan->plan_data
+            ]);
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Datos del plan corruptos'
             ], 500);
         }
+
+        // ⭐ EXTRAER SOLO nutritionPlan (la estructura raíz que espera el frontend)
+        $nutritionPlan = $fullPlan['nutritionPlan'] ?? $fullPlan; // fallback por si no está envuelto
+
+        // ⭐ AÑADIR LOS CAMPOS EXTRAS DENTRO DEL nutritionPlan (para mantener compatibilidad con el frontend)
+        $nutritionPlan['validation_status'] = $mealPlan->validation_data['is_valid'] ?? false;
+        $nutritionPlan['generation_method'] = $mealPlan->generation_method;
+
+        // Decodificar los otros campos JSON para devolverlos limpios
+        $nutritionalData = json_decode($mealPlan->nutritional_data, true) ?? [];
+        $personalizationData = json_decode($mealPlan->personalization_data, true) ?? [];
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $nutritionPlan, // ← Esto es exactamente lo que parsea MealPlanData.fromJson
+            'nutritional_data' => $nutritionalData,
+            'personalization_data' => $personalizationData,
+            'created_at' => $mealPlan->created_at,
+            'updated_at' => $mealPlan->updated_at
+        ]);
+    } catch (\Exception $e) {
+        Log::error('Error crítico al obtener plan activo', [
+            'user_id' => Auth::id(),
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
+
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Error interno al obtener el plan'
+        ], 500);
     }
+}
 
     /**
      * Validar selección de comida en tiempo real

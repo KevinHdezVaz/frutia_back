@@ -9,37 +9,37 @@ class FoodCalculationService
     public function calculateProteinPortionByFood($foodName, $targetProtein, $isLowBudget = true): ?array
     {
         $nutritionMapLow = [
-            'Huevo entero' => [
+            'Whole egg' => [
                 'protein' => 13,
                 'calories' => 155,
                 'fats' => 11,
                 'carbs' => 1,
                 'weigh_raw' => false,
-                'unit' => 'unidad',
+                'unit' => 'unit',
                 'unit_weight' => 50
             ],
-            'Atún en lata' => [
+            'Canned tuna' => [
                 'protein' => 30,
                 'calories' => 145,
                 'fats' => 2,
                 'carbs' => 0,
                 'weigh_raw' => false
             ],
-            'Pollo muslo' => [
+            'Chicken thigh' => [
                 'protein' => 25,
                 'calories' => 180,
                 'fats' => 10,
                 'carbs' => 0,
                 'weigh_raw' => true
             ],
-            'Carne molida' => [
+            'Ground beef' => [
                 'protein' => 26,
                 'calories' => 153,
                 'fats' => 7,
                 'carbs' => 0,
                 'weigh_raw' => true
             ],
-            'Yogurt griego' => [
+            'Greek yogurt' => [
                 'protein' => 10,
                 'calories' => 59,
                 'fats' => 0.4,
@@ -49,105 +49,90 @@ class FoodCalculationService
         ];
 
         $nutritionMapHigh = [
-            'Claras + Huevo entero' => [
+            'Egg whites + Whole egg' => [
                 'protein' => 11,
                 'calories' => 90,
                 'fats' => 3,
                 'carbs' => 1,
                 'weigh_raw' => false,
-                'unit' => 'mezcla',
+                'unit' => 'mix',
                 'unit_weight' => 55,
-                'description' => '3 claras + 1 huevo entero'
+                'description' => '3 egg whites + 1 whole egg'
             ],
-            'Yogurt griego' => [
+            'Greek yogurt' => [
                 'protein' => 10,
                 'calories' => 59,
                 'fats' => 0.4,
                 'carbs' => 3.6,
                 'weigh_raw' => false
             ],
-            'Yogurt griego alto en proteínas' => [
+            'High-protein Greek yogurt' => [
                 'protein' => 20,
                 'calories' => 90,
                 'fats' => 3,
                 'carbs' => 5,
                 'weigh_raw' => false
             ],
-            'Yogurt griego alto en proteína' => [
-                'protein' => 20,
-                'calories' => 90,
-                'fats' => 3,
-                'carbs' => 5,
-                'weigh_raw' => false
-            ],
-            'Proteína whey' => [
+            'Whey protein' => [
                 'protein' => 80,
                 'calories' => 380,
                 'fats' => 2,
                 'carbs' => 8,
                 'weigh_raw' => false
             ],
-            'Pechuga de pollo' => [
+            'Chicken breast' => [
                 'protein' => 31,
                 'calories' => 165,
                 'fats' => 3.6,
                 'carbs' => 0,
                 'weigh_raw' => true
             ],
-            'Salmón fresco' => [
+            'Fresh salmon' => [
                 'protein' => 25,
                 'calories' => 208,
                 'fats' => 13,
                 'carbs' => 0,
                 'weigh_raw' => true
             ],
-            'Carne de res magra' => [
+            'Lean beef' => [
                 'protein' => 26,
                 'calories' => 153,
                 'fats' => 7,
                 'carbs' => 0,
                 'weigh_raw' => true
             ],
-            'Proteína en polvo' => [
+            'Protein powder' => [
                 'protein' => 80,
                 'calories' => 380,
                 'fats' => 2,
                 'carbs' => 8,
                 'weigh_raw' => false
             ],
-            'Caseína' => [
+            'Casein' => [
                 'protein' => 78,
                 'calories' => 360,
                 'fats' => 1,
                 'carbs' => 10,
                 'weigh_raw' => false
             ],
-            'Pescado blanco' => [
+            'White fish' => [
                 'protein' => 25,
                 'calories' => 120,
                 'fats' => 2,
                 'carbs' => 0,
                 'weigh_raw' => true
             ],
-            'Pechuga de pavo' => [
+            'Turkey breast' => [
                 'protein' => 29,
                 'calories' => 135,
                 'fats' => 1,
                 'carbs' => 0,
                 'weigh_raw' => true
             ],
-            'Claras + Huevo Entero' => [
-                'protein' => 11,
-                'calories' => 52,
-                'fats' => 0,
-                'carbs' => 1,
-                'weigh_raw' => false,
-                'unit' => 'unidad',
-                'unit_weight' => 33
-            ],
         ];
 
         $nutritionMap = $isLowBudget ? $nutritionMapLow : array_merge($nutritionMapLow, $nutritionMapHigh);
+
         $nutrition = $nutritionMap[$foodName] ?? null;
 
         if (!$nutrition) {
@@ -160,27 +145,26 @@ class FoodCalculationService
         $fats = ($gramsNeeded / 100) * $nutrition['fats'];
         $carbs = ($gramsNeeded / 100) * $nutrition['carbs'];
 
-        if ($foodName === 'Claras + Huevo entero') {
+        if ($foodName === 'Egg whites + Whole egg') {
             $totalUnits = round($targetProtein / 6.5);
             if ($totalUnits < 3) $totalUnits = 3;
-
             $eggWholeUnits = max(1, round($totalUnits * 0.3));
             $eggWhiteUnits = $totalUnits - $eggWholeUnits;
-
-            $portion = sprintf('%d claras + %d huevo%s entero%s',
+            $whiteWord = $eggWhiteUnits == 1 ? 'egg white' : 'egg whites';
+            $wholeWord = $eggWholeUnits == 1 ? 'whole egg' : 'whole eggs';
+            $portion = sprintf('%d %s + %d %s',
                 $eggWhiteUnits,
+                $whiteWord,
                 $eggWholeUnits,
-                $eggWholeUnits > 1 ? 's' : '',
-                $eggWholeUnits > 1 ? 's' : ''
+                $wholeWord
             );
-
             $calories = ($eggWhiteUnits * 17) + ($eggWholeUnits * 70);
             $protein = ($eggWhiteUnits * 3.6) + ($eggWholeUnits * 6);
             $fats = ($eggWholeUnits * 5);
             $carbs = round($totalUnits * 0.5);
 
             return [
-                'name' => 'Claras + Huevo entero',
+                'name' => 'Egg whites + Whole egg',
                 'portion' => $portion,
                 'calories' => round($calories),
                 'protein' => round($protein),
@@ -192,16 +176,15 @@ class FoodCalculationService
         if (isset($nutrition['unit']) && isset($nutrition['unit_weight'])) {
             $units = round($gramsNeeded / $nutrition['unit_weight']);
             if ($units < 1) $units = 1;
-
-            $portion = "{$units} " . ($units == 1 ? $nutrition['unit'] : $nutrition['unit'] . 's');
-
+            $unitWord = $units == 1 ? $nutrition['unit'] : $nutrition['unit'] . 's';
+            $portion = "{$units} {$unitWord}";
             $gramsNeeded = $units * $nutrition['unit_weight'];
             $calories = ($gramsNeeded / 100) * $nutrition['calories'];
             $actualProtein = ($gramsNeeded / 100) * $nutrition['protein'];
             $fats = ($gramsNeeded / 100) * $nutrition['fats'];
             $carbs = ($gramsNeeded / 100) * $nutrition['carbs'];
         } else {
-            $portionLabel = $nutrition['weigh_raw'] ? '(peso en crudo)' : 'escurrido';
+            $portionLabel = $nutrition['weigh_raw'] ? '(raw weight)' : '(drained)';
             $portion = round($gramsNeeded) . "g " . $portionLabel;
             $actualProtein = $targetProtein;
         }
@@ -220,28 +203,28 @@ class FoodCalculationService
     public function calculateFatPortionByFood($foodName, $targetFats, $isLowBudget = true): ?array
     {
         $nutritionMapLow = [
-            'Aceite de oliva' => [
+            'Olive oil' => [
                 'protein' => 0,
                 'calories' => 884,
                 'fats' => 100,
                 'carbs' => 0,
                 'density' => 0.92
             ],
-            'Maní' => [
+            'Peanuts' => [
                 'protein' => 26,
                 'calories' => 567,
                 'fats' => 49,
                 'carbs' => 16
             ],
-            'Aguacate' => [
+            'Avocado' => [
                 'protein' => 2,
                 'calories' => 160,
                 'fats' => 15,
                 'carbs' => 9,
-                'unit' => 'unidad',
+                'unit' => 'unit',
                 'unit_weight' => 200
             ],
-            'Mantequilla de maní casera' => [
+            'Homemade peanut butter' => [
                 'protein' => 25,
                 'calories' => 588,
                 'fats' => 50,
@@ -250,34 +233,34 @@ class FoodCalculationService
         ];
 
         $nutritionMapHigh = [
-            'Aceite de oliva extra virgen' => [
+            'Extra virgin olive oil' => [
                 'protein' => 0,
                 'calories' => 884,
                 'fats' => 100,
                 'carbs' => 0,
                 'density' => 0.92
             ],
-            'Almendras' => [
+            'Almonds' => [
                 'protein' => 21,
                 'calories' => 579,
                 'fats' => 50,
                 'carbs' => 22
             ],
-            'Aguacate hass' => [
+            'Hass avocado' => [
                 'protein' => 2,
                 'calories' => 160,
                 'fats' => 15,
                 'carbs' => 9,
-                'unit' => 'unidad',
+                'unit' => 'unit',
                 'unit_weight' => 200
             ],
-            'Nueces' => [
+            'Walnuts' => [
                 'protein' => 15,
                 'calories' => 654,
                 'fats' => 65,
                 'carbs' => 14
             ],
-            'Mantequilla de maní' => [
+            'Peanut butter' => [
                 'protein' => 25,
                 'calories' => 588,
                 'fats' => 50,
@@ -286,6 +269,7 @@ class FoodCalculationService
         ];
 
         $nutritionMap = $isLowBudget ? $nutritionMapLow : array_merge($nutritionMapLow, $nutritionMapHigh);
+
         $nutrition = $nutritionMap[$foodName] ?? null;
 
         if (!$nutrition) {
@@ -298,25 +282,25 @@ class FoodCalculationService
         $protein = ($gramsNeeded / 100) * $nutrition['protein'];
         $carbs = ($gramsNeeded / 100) * $nutrition['carbs'];
 
-        if (str_contains(strtolower($foodName), 'aceite')) {
+        if (str_contains(strtolower($foodName), 'oil')) {
             $ml = round($gramsNeeded * (1 / ($nutrition['density'] ?? 0.92)));
             $tbsp = max(1, round($ml / 15));
-            $portion = "{$tbsp} " . ($tbsp == 1 ? 'cucharada' : 'cucharadas') . " ({$ml}ml)";
-
+            $tbspWord = $tbsp == 1 ? 'tablespoon' : 'tablespoons';
+            $portion = "{$tbsp} {$tbspWord} ({$ml}ml)";
         } elseif (isset($nutrition['unit']) && isset($nutrition['unit_weight'])) {
             $fraction = $gramsNeeded / $nutrition['unit_weight'];
-
+            $unitWord = $nutrition['unit'];
             if ($fraction <= 0.33) {
-                $portion = round($gramsNeeded) . "g (1/3 {$nutrition['unit']})";
+                $portion = round($gramsNeeded) . "g (1/3 {$unitWord})";
             } elseif ($fraction <= 0.5) {
-                $portion = round($gramsNeeded) . "g (1/2 {$nutrition['unit']})";
+                $portion = round($gramsNeeded) . "g (1/2 {$unitWord})";
             } elseif ($fraction <= 0.75) {
-                $portion = round($gramsNeeded) . "g (3/4 {$nutrition['unit']})";
+                $portion = round($gramsNeeded) . "g (3/4 {$unitWord})";
             } else {
                 $units = ceil($fraction);
-                $portion = round($gramsNeeded) . "g ({$units} " . ($units == 1 ? $nutrition['unit'] : $nutrition['unit'] . 's') . ")";
+                $pluralUnit = $units == 1 ? $unitWord : $unitWord . 's';
+                $portion = round($gramsNeeded) . "g ({$units} {$pluralUnit})";
             }
-
         } else {
             $portion = round($gramsNeeded) . "g";
         }
@@ -334,24 +318,24 @@ class FoodCalculationService
     public function calculateCarbPortionByFood($foodName, $targetCarbs): ?array
     {
         $nutritionMap = [
-            'Papa' => ['protein' => 2, 'carbs' => 18, 'fats' => 0, 'calories' => 78, 'weigh_raw' => false],
-            'Arroz blanco' => ['protein' => 2.7, 'carbs' => 28, 'fats' => 0.3, 'calories' => 130, 'weigh_raw' => false],
-            'Camote' => ['protein' => 1.6, 'carbs' => 20, 'fats' => 0, 'calories' => 86, 'weigh_raw' => false],
-            'Fideo' => ['protein' => 5, 'carbs' => 31, 'fats' => 0.9, 'calories' => 158, 'weigh_raw' => false],
-            'Frijoles' => ['protein' => 8.7, 'carbs' => 21, 'fats' => 0.5, 'calories' => 132, 'weigh_raw' => false],
-            'Quinua' => ['protein' => 4.4, 'carbs' => 21, 'fats' => 1.9, 'calories' => 120, 'weigh_raw' => false],
-            'Pan integral' => ['protein' => 9, 'carbs' => 47, 'fats' => 4, 'calories' => 260, 'weigh_raw' => false, 'unit' => 'rebanada', 'unit_weight' => 30],
-            'Tortilla de maíz' => ['protein' => 6, 'carbs' => 50, 'fats' => 3, 'calories' => 250, 'weigh_raw' => false, 'unit' => 'tortilla', 'unit_weight' => 30],
-            'Galletas de arroz' => ['protein' => 8, 'carbs' => 82, 'fats' => 3, 'calories' => 390, 'weigh_raw' => false, 'unit' => 'unidad', 'unit_weight' => 9],
-            'Avena' => ['protein' => 13, 'carbs' => 67, 'fats' => 7, 'calories' => 375, 'weigh_raw' => true],
-            'Avena orgánica' => ['protein' => 13, 'carbs' => 67, 'fats' => 7, 'calories' => 375, 'weigh_raw' => true],
-            'Crema de arroz' => ['protein' => 6, 'carbs' => 80, 'fats' => 1, 'calories' => 360, 'weigh_raw' => true],
-            'Cereal de maíz' => ['protein' => 7, 'carbs' => 84, 'fats' => 3, 'calories' => 380, 'weigh_raw' => true],
-            'Pan integral artesanal' => ['protein' => 10, 'carbs' => 45, 'fats' => 5, 'calories' => 270, 'weigh_raw' => false, 'unit' => 'rebanada', 'unit_weight' => 35],
-            'arroz blanco' => ['protein' => 2.6, 'carbs' => 23, 'fats' => 0.9, 'calories' => 111, 'weigh_raw' => false],
+            'Potato' => ['protein' => 2, 'carbs' => 18, 'fats' => 0, 'calories' => 78, 'weigh_raw' => false],
+            'White rice' => ['protein' => 2.7, 'carbs' => 28, 'fats' => 0.3, 'calories' => 130, 'weigh_raw' => false],
+            'Sweet potato' => ['protein' => 1.6, 'carbs' => 20, 'fats' => 0, 'calories' => 86, 'weigh_raw' => false],
+            'Noodles' => ['protein' => 5, 'carbs' => 31, 'fats' => 0.9, 'calories' => 158, 'weigh_raw' => false],
+            'Beans' => ['protein' => 8.7, 'carbs' => 21, 'fats' => 0.5, 'calories' => 132, 'weigh_raw' => false],
+            'Quinoa' => ['protein' => 4.4, 'carbs' => 21, 'fats' => 1.9, 'calories' => 120, 'weigh_raw' => false],
+            'Whole wheat bread' => ['protein' => 9, 'carbs' => 47, 'fats' => 4, 'calories' => 260, 'weigh_raw' => false, 'unit' => 'slice', 'unit_weight' => 30],
+            'Corn tortilla' => ['protein' => 6, 'carbs' => 50, 'fats' => 3, 'calories' => 250, 'weigh_raw' => false, 'unit' => 'tortilla', 'unit_weight' => 30],
+            'Rice crackers' => ['protein' => 8, 'carbs' => 82, 'fats' => 3, 'calories' => 390, 'weigh_raw' => false, 'unit' => 'unit', 'unit_weight' => 9],
+            'Oats' => ['protein' => 13, 'carbs' => 67, 'fats' => 7, 'calories' => 375, 'weigh_raw' => true],
+            'Organic oats' => ['protein' => 13, 'carbs' => 67, 'fats' => 7, 'calories' => 375, 'weigh_raw' => true],
+            'Cream of rice' => ['protein' => 6, 'carbs' => 80, 'fats' => 1, 'calories' => 360, 'weigh_raw' => true],
+            'Corn cereal' => ['protein' => 7, 'carbs' => 84, 'fats' => 3, 'calories' => 380, 'weigh_raw' => true],
+            'Artisanal whole wheat bread' => ['protein' => 10, 'carbs' => 45, 'fats' => 5, 'calories' => 270, 'weigh_raw' => false, 'unit' => 'slice', 'unit_weight' => 35],
         ];
 
         $nutrition = $nutritionMap[$foodName] ?? null;
+
         if (!$nutrition) {
             Log::warning("Alimento de carbohidrato no encontrado: {$foodName}");
             return null;
@@ -365,17 +349,15 @@ class FoodCalculationService
         if (isset($nutrition['unit']) && isset($nutrition['unit_weight'])) {
             $units = round($gramsNeeded / $nutrition['unit_weight']);
             if ($units < 1) $units = 1;
-
-            $portion = "{$units} " . ($units == 1 ? $nutrition['unit'] : $nutrition['unit'] . 's');
-
+            $unitWord = $units == 1 ? $nutrition['unit'] : $nutrition['unit'] . 's';
+            $portion = "{$units} {$unitWord}";
             $gramsNeeded = $units * $nutrition['unit_weight'];
             $calories = ($gramsNeeded / 100) * $nutrition['calories'];
             $protein = ($gramsNeeded / 100) * $nutrition['protein'];
             $fats = ($gramsNeeded / 100) * $nutrition['fats'];
             $actualCarbs = ($gramsNeeded / 100) * $nutrition['carbs'];
-
         } else {
-            $portionLabel = $nutrition['weigh_raw'] ? '(peso en seco)' : '(peso cocido)';
+            $portionLabel = $nutrition['weigh_raw'] ? '(dry weight)' : '(cooked weight)';
             $portion = round($gramsNeeded) . "g " . $portionLabel;
             $actualCarbs = $targetCarbs;
         }
@@ -393,7 +375,7 @@ class FoodCalculationService
 
     public function isEggProduct($foodName): bool
     {
-        $eggProducts = ['huevo entero', 'huevos', 'Claras + Huevo Entero', 'claras pasteurizadas', 'huevo', 'clara'];
+        $eggProducts = ['whole egg', 'eggs', 'egg whites + whole egg', 'pasteurized egg whites', 'egg', 'egg white'];
         $nameLower = strtolower($foodName);
         foreach ($eggProducts as $egg) {
             if (str_contains($nameLower, $egg)) {
@@ -406,28 +388,25 @@ class FoodCalculationService
     public function isFoodHighBudget($foodName): bool
     {
         $highBudgetFoods = [
-            'salmón',
             'salmon',
-            'pechuga de pollo',
-            'Claras + Huevo Entero',
-            'yogurt griego',
-            'yogur griego',
-            'proteína',
+            'chicken breast',
+            'egg whites + whole egg',
+            'greek yogurt',
+            'protein',
             'whey',
-            'quinua',
             'quinoa',
-            'avena orgánica',
-            'pan integral artesanal',
-            'aceite de oliva extra virgen',
-            'almendras',
-            'nueces',
-            'pistachos',
-            'aguacate hass',
-            'palta hass'
+            'organic oats',
+            'artisanal whole wheat bread',
+            'extra virgin olive oil',
+            'almonds',
+            'walnuts',
+            'pistachios',
+            'hass avocado'
         ];
 
+        $nameLower = strtolower($foodName);
         foreach ($highBudgetFoods as $food) {
-            if (str_contains($foodName, $food)) {
+            if (str_contains($nameLower, $food)) {
                 return true;
             }
         }
@@ -437,26 +416,25 @@ class FoodCalculationService
     public function isFoodLowBudget($foodName): bool
     {
         $lowBudgetFoods = [
-            'huevo entero',
-            'pollo muslo',
-            'muslos',
-            'atún en lata',
-            'carne molida',
-            'arroz blanco',
-            'papa',
-            'fideos',
-            'avena tradicional',
-            'tortillas de maíz',
-            'pan de molde',
-            'aceite vegetal',
-            'maní',
-            'cacahuate',
-            'frijoles',
-            'lentejas'
+            'whole egg',
+            'chicken thigh',
+            'canned tuna',
+            'ground beef',
+            'white rice',
+            'potato',
+            'noodles',
+            'traditional oats',
+            'corn tortilla',
+            'whole wheat bread',
+            'vegetable oil',
+            'peanuts',
+            'beans',
+            'lentils'
         ];
 
+        $nameLower = strtolower($foodName);
         foreach ($lowBudgetFoods as $food) {
-            if (str_contains($foodName, $food)) {
+            if (str_contains($nameLower, $food)) {
                 return true;
             }
         }
@@ -470,7 +448,6 @@ class FoodCalculationService
             'Á' => 'a', 'É' => 'e', 'Í' => 'i', 'Ó' => 'o', 'Ú' => 'u',
             'ñ' => 'n', 'Ñ' => 'n'
         ];
-
         return strtr(strtolower($text), $unwanted);
     }
 
@@ -503,13 +480,13 @@ class FoodCalculationService
     public function areNamesEquivalent(string $name1, string $name2): bool
     {
         $equivalences = [
-            'palta' => 'aguacate',
-            'aguacate' => 'palta',
-            'pollo pechuga' => 'pechuga de pollo',
-            'atun' => 'atun en lata',
-            'mani' => 'mantequilla de mani',
-            'claras' => 'Claras + Huevo Entero',
-            'yogurt' => 'yogur',
+            'avocado' => 'hass avocado',
+            'hass avocado' => 'avocado',
+            'chicken breast' => 'chicken',
+            'canned tuna' => 'tuna',
+            'peanut butter' => 'peanuts',
+            'egg whites' => 'egg whites + whole egg',
+            'yogurt' => 'greek yogurt',
         ];
 
         foreach ($equivalences as $key => $value) {

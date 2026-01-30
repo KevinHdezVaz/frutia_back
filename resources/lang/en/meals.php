@@ -1,202 +1,129 @@
 <?php
 
 return [
-    // ========== MEAL NAMES ==========
-    'breakfast' => 'Breakfast',
-    'lunch' => 'Lunch',
-    'dinner' => 'Dinner',
-    'snack_am' => 'AM Snack',
-    'snack_pm' => 'PM Snack',
-    'snack' => 'Snack',
+    /*
+    |--------------------------------------------------------------------------
+    | Meal Names
+    |--------------------------------------------------------------------------
+    */
+    'meal_names' => [
+        'desayuno' => 'Breakfast',
+        'almuerzo' => 'Lunch',
+        'cena' => 'Dinner',
+        'snack_am' => 'Morning Snack',
+        'snack_pm' => 'Afternoon Snack',
+    ],
 
-    // ========== CATEGORIES ==========
-    'proteins' => 'Proteins',
-    'carbohydrates' => 'Carbohydrates',
-    'fats' => 'Fats',
-    'vegetables' => 'Vegetables',
-    'fruits' => 'Fruits',
+    /*
+    |--------------------------------------------------------------------------
+    | Categories
+    |--------------------------------------------------------------------------
+    */
+    'categories' => [
+        'proteínas' => 'Proteins',
+        'carbohidratos' => 'Carbohydrates',
+        'grasas' => 'Fats',
+        'vegetales' => 'Vegetables',
+    ],
 
-    // ========== UNITS ==========
-    'unit' => 'unit',
-    'units' => 'units',
-    'mix' => 'mix',
-    'mixes' => 'mixes',
-    'slice' => 'slice',
-    'slices' => 'slices',
-    'tortilla' => 'tortilla',
-    'tortillas' => 'tortillas',
-    'tablespoon' => 'tablespoon',
-    'tablespoons' => 'tablespoons',
-    'teaspoon' => 'teaspoon',
-    'teaspoons' => 'teaspoons',
-    'cup' => 'cup',
-    'cups' => 'cups',
-    'glass' => 'glass',
-    'glasses' => 'glasses',
+    /*
+    |--------------------------------------------------------------------------
+    | Personalized Messages
+    |--------------------------------------------------------------------------
+    */
+    'personalized_message' => [
+        'snack_am' => 'Hi :name, your plan includes 3 main meals (Breakfast, Lunch, Dinner) and a mid-morning snack, as you prefer.',
+        'snack_pm' => 'Hi :name, your plan includes 3 main meals (Breakfast, Lunch, Dinner) and a mid-afternoon snack, as you prefer.',
+        'default' => 'Hi :name, your plan includes 3 main meals (Breakfast, Lunch, Dinner) and a mid-morning snack.',
+    ],
 
-    // ========== WEIGHT DESCRIPTIONS ==========
-    'raw_weight' => '(raw weight)',
-    'cooked_weight' => '(cooked weight)',
-    'dry_weight' => '(dry weight)',
+    /*
+    |--------------------------------------------------------------------------
+    | Snack Times
+    |--------------------------------------------------------------------------
+    */
+    'snack_times' => [
+        'morning' => 'mid-morning',
+        'afternoon' => 'mid-afternoon',
+    ],
 
-    // ========== PROTEINS ==========
-    'whole_egg' => 'Whole egg',
-    'canned_tuna' => 'Canned tuna',
-    'chicken_thigh' => 'Chicken thigh',
-    'ground_beef' => 'Ground beef',
-    'greek_yogurt' => 'Greek yogurt',
-    'egg_whites_whole_egg' => 'Egg whites + Whole egg',
-    'high_protein_greek_yogurt' => 'High-protein Greek yogurt',
-    'whey_protein' => 'Whey protein',
-    'chicken_breast' => 'Chicken breast',
-    'fresh_salmon' => 'Fresh salmon',
-    'lean_beef' => 'Lean beef',
-    'protein_powder' => 'Protein powder',
-    'casein' => 'Casein',
-    'white_fish' => 'White fish',
-    'turkey_breast' => 'Turkey breast',
-    'pasteurized_egg_whites' => 'Pasteurized egg whites',
-    'whole_eggs' => 'Whole eggs',
-    'eggs_scrambled' => 'Scrambled eggs',
+    /*
+    |--------------------------------------------------------------------------
+    | General Recommendations
+    |--------------------------------------------------------------------------
+    */
+    'recommendations' => [
+        'hydration' => 'Hydration: drink at least 2 liters of water per day',
+        'main_meals' => 'The 3 main meals are mandatory: Breakfast, Lunch, and Dinner',
+        'snack_time' => 'Your snack is for :time',
+        'schedule' => 'Follow the schedule to optimize your metabolism',
+        'vegetables' => 'Vegetables are unlimited in all main meals',
+    ],
 
-    // ========== CARBOHYDRATES ==========
-    'potato' => 'Potato',
-    'white_rice' => 'White rice',
-    'sweet_potato' => 'Sweet potato',
-    'pasta' => 'Pasta',
-    'beans' => 'Beans',
-    'quinoa' => 'Quinoa',
-    'whole_wheat_bread' => 'Whole wheat bread',
-    'corn_tortilla' => 'Corn tortilla',
-    'rice_cakes' => 'Rice cakes',
-    'oats' => 'Oats',
-    'organic_oats' => 'Organic oats',
-    'traditional_oats' => 'Traditional oats',
-    'cream_of_rice' => 'Cream of rice',
-    'corn_cereal' => 'Corn cereal',
-    'artisan_whole_wheat_bread' => 'Artisan whole wheat bread',
-    'sliced_bread' => 'Sliced bread',
-    'whole_wheat_pasta' => 'Whole wheat pasta',
-    'lentils' => 'Lentils',
-    'cooked_lentils' => 'Cooked lentils',
-    'cooked_quinoa' => 'Cooked quinoa',
-    'black_beans_cooked' => 'Cooked black beans',
-    'chickpeas_cooked' => 'Cooked chickpeas',
+    /*
+    |--------------------------------------------------------------------------
+    | Meal Structure
+    |--------------------------------------------------------------------------
+    */
+    'meal_structure' => '3 main meals + 1 snack (:snack)',
 
-    // ========== FATS ==========
-    'olive_oil' => 'Olive oil',
-    'peanuts' => 'Peanuts',
-    'avocado' => 'Avocado',
-    'homemade_peanut_butter' => 'Homemade peanut butter',
-    'extra_virgin_olive_oil' => 'Extra virgin olive oil',
-    'almonds' => 'Almonds',
-    'hass_avocado' => 'Hass avocado',
-    'walnuts' => 'Walnuts',
-    'peanut_butter' => 'Peanut butter',
-    'organic_chia_seeds' => 'Organic chia seeds',
-    'pistachios' => 'Pistachios',
-    'vegetable_oil' => 'Vegetable oil',
-    'honey' => 'Honey',
-    'dark_chocolate_70' => '70% Dark chocolate',
+    /*
+    |--------------------------------------------------------------------------
+    | Tips
+    |--------------------------------------------------------------------------
+    */
+    'tips' => [
+        'snack_am' => 'Mid-morning snack to maintain energy',
+        'snack_pm' => 'Mid-afternoon snack to avoid arriving too hungry at dinner',
+    ],
 
-    // ========== VEGETABLES ==========
-    'mixed_vegetables' => 'Mixed vegetables',
-    'mixed_salad' => 'Mixed salad',
-    'broccoli' => 'Broccoli',
-    'spinach' => 'Spinach',
-    'carrot' => 'Carrot',
-    'tomato' => 'Tomato',
-    'cucumber' => 'Cucumber',
-    'lettuce' => 'Lettuce',
-    'steamed_broccoli' => 'Steamed broccoli',
-    'sauteed_spinach' => 'Sautéed spinach',
-    'complete_mixed_salad' => 'Complete mixed salad',
-    'steamed_vegetables_bowl' => 'Steamed vegetables bowl',
-    'mediterranean_salad' => 'Mediterranean salad',
-    'sauteed_vegetables' => 'Sautéed vegetables',
-    'green_mixed_salad_large' => 'Large green mixed salad',
-    'cruciferous_salad' => 'Cruciferous vegetables salad',
-    'low_carb_vegetables_mix' => 'Low-carb vegetables mix',
+    /*
+    |--------------------------------------------------------------------------
+    | Vegetables Section
+    |--------------------------------------------------------------------------
+    */
+    'vegetables' => [
+        'recommendation' => 'Minimum consumption of 100 kcal in vegetables per main meal',
 
-    // ========== FRUITS ==========
-    'fruits' => 'Fruits',
-    'apple' => 'Apple',
-    'banana' => 'Banana',
-    'orange' => 'Orange',
-    'strawberry' => 'Strawberry',
-    'mango' => 'Mango',
-    'pineapple' => 'Pineapple',
+        'regular' => [
+            'mixed_salad' => [
+                'name' => 'Complete mixed salad',
+                'portion' => '350g (2.5 cups)',
+                'examples' => '2 cups mixed lettuce + 1 medium tomato + 1/2 cup shredded carrot + 1/4 cup onion',
+            ],
+            'steamed_bowl' => [
+                'name' => 'Steamed vegetable bowl',
+                'portion' => '300g (2 cups)',
+                'examples' => '1 cup broccoli + 1/2 cup carrot + 1/2 cup green beans + 1/2 cup squash',
+            ],
+            'mediterranean_salad' => [
+                'name' => 'Mediterranean salad',
+                'portion' => '320g (2 cups)',
+                'examples' => '1.5 cups lettuce + 1 tomato + 1/2 cucumber + 1/4 cup bell pepper + red onion',
+            ],
+            'sauteed' => [
+                'name' => 'Sautéed vegetables',
+                'portion' => '280g (2 cups)',
+                'examples' => '1 cup broccoli + 1/2 cup bell pepper + 1/2 cup onion + 1/2 cup zucchini',
+            ],
+        ],
 
-    // ========== OTHER FOODS ==========
-    'firm_tofu' => 'Firm tofu',
-    'tempeh' => 'Tempeh',
-    'seitan' => 'Seitan',
-    'fresh_cheese' => 'Fresh cheese',
-    'cottage_cheese' => 'Cottage cheese',
-    'natural_yogurt' => 'Natural yogurt',
-    'panela_cheese_grilled' => 'Grilled panela cheese',
-    'oaxaca_cheese' => 'Oaxaca cheese',
-    'ricotta_with_herbs' => 'Ricotta with herbs',
-    'lentil_burger' => 'Lentil burger',
-    'plant_protein_powder' => 'Plant protein powder',
-    'greek_yogurt_with_granola' => 'Greek yogurt with protein granola',
-
-    // ========== KETO ==========
-    'chicken_thigh_with_skin' => 'Chicken thigh with skin',
-    'ground_beef_80_20' => 'Ground beef 80/20',
-    'salmon' => 'Salmon',
-    'ribeye' => 'Ribeye',
-    'duck_breast' => 'Duck breast',
-    'lard' => 'Lard',
-    'butter' => 'Butter',
-    'mct_oil' => 'MCT oil',
-    'ghee_butter' => 'Ghee butter',
-
-    // ========== MESSAGES AND VALIDATIONS ==========
-    'invalid_plan_structure' => 'The generated plan does not have a valid structure',
-    'high_budget_food_in_low_plan' => 'High budget food ":food" found in :meal (low budget plan)',
-    'low_budget_food_in_high_plan' => 'Low budget food ":food" found in :meal (high budget plan)',
-    'eggs_multiple_meals' => 'Eggs appear in multiple meals: :meals (maximum 1 meal)',
-    'allergen_critical' => 'CRITICAL ALLERGY! ":food" contains ":allergen" in :meal - :category',
-    'quinoa_breakfast_error' => 'Quinoa is not allowed at breakfast',
-    'less_preferred_first' => 'Less preferred food ":food" appears first in :meal - :category',
-    'must_be_cooked' => '":food" should indicate cooked weight, not raw',
-    'must_be_raw' => '":food" should indicate dry/raw weight, not cooked',
-    'vegetables_low_calories' => 'Vegetables in :meal have too few calories (:calories kcal, minimum 100)',
-    'vegetables_high_calories' => 'Vegetables in :meal have too many calories (:calories kcal, maximum 150)',
-    'vegetables_missing' => 'Vegetables missing in :meal',
-    'protein_out_of_range' => 'Protein out of range: target :target g, obtained :obtained g (difference: :diff g)',
-    'carbs_out_of_range' => 'Carbohydrates out of range: target :target g, obtained :obtained g (difference: :diff g)',
-    'fats_out_of_range' => 'Fats out of range: target :target g, obtained :obtained g (difference: :diff g)',
-    'fiber_low' => 'Low fiber: :current g (target: :target g)',
-    'meal_unbalanced' => 'Meal :meal unbalanced: expected :expected kcal, actual :actual kcal',
-
-    // ========== PORTION DESCRIPTIONS ==========
-    'egg_whites_portion' => ':whites egg white:plural_whites + :whole whole egg:plural_whole',
-    'portion_examples' => 'Portion example',
-
-    // ========== RECOMMENDATIONS ==========
-    'hydration_recommendation' => 'Hydration: drink at least 2 liters of water per day',
-    'main_meals_mandatory' => 'The 3 main meals are mandatory: Breakfast, Lunch, and Dinner',
-    'snack_timing_am' => 'Your snack is for mid-morning',
-    'snack_timing_pm' => 'Your snack is for mid-afternoon',
-    'respect_schedule' => 'Respect the schedule to optimize your metabolism',
-    'vegetables_free' => 'Vegetables are unlimited in all main meals',
-
-    // ========== MEAL STRUCTURE ==========
-    'meal_structure_am' => '3 main meals + 1 snack (AM Snack)',
-    'meal_structure_pm' => '3 main meals + 1 snack (PM Snack)',
-
-    // ========== PERSONALIZED MESSAGES ==========
-    'personalized_message_am' => 'Hi :name, your plan includes 3 main meals (Breakfast, Lunch, Dinner) and a mid-morning snack, as you prefer.',
-    'personalized_message_pm' => 'Hi :name, your plan includes 3 main meals (Breakfast, Lunch, Dinner) and a mid-afternoon snack, as you prefer.',
-    'personalized_message_default' => 'Hi :name, your plan includes 3 main meals (Breakfast, Lunch, Dinner) and a mid-morning snack.',
-
-    // ========== PERSONALIZED TIPS ==========
-    'snack_am_tip' => 'Mid-morning snack to maintain energy',
-    'snack_pm_tip' => 'Mid-afternoon snack to avoid arriving too hungry at dinner',
-
-    // ========== VEGETABLES REQUIREMENTS ==========
-    'vegetables_requirement' => 'minimum',
-    'vegetables_recommendation' => 'Minimum consumption of 100 kcal in vegetables per main meal',
+        'keto' => [
+            'mixed_green_salad' => [
+                'name' => 'Large mixed green salad',
+                'portion' => '400g (2 large cups)',
+                'examples' => '2 cups lettuce + 1 cup spinach + 1/2 cup cucumber + 1/4 cup bell pepper',
+            ],
+            'cruciferous_salad' => [
+                'name' => 'Cruciferous vegetable salad',
+                'portion' => '350g (2 cups)',
+                'examples' => '1 cup broccoli + 1 cup cauliflower + 1/2 cup red cabbage',
+            ],
+            'low_carb_mix' => [
+                'name' => 'Low-carb vegetable mix',
+                'portion' => '380g',
+                'examples' => '1.5 cups spinach + 1/2 cup mushrooms + 1/2 cup zucchini + cherry tomatoes',
+            ],
+        ],
+    ],
 ];
