@@ -42,20 +42,37 @@ class GenerateUserPlanJob implements ShouldQueue
     return trim($text);
 }
 
-    private function isSimilar(string $str1, string $str2, int $levenshteinMax = 4, float $similarPercent = 0.70): bool
-{
+ 
+private function isSimilar(
+    string $str1,
+    string $str2,
+    int $levenshteinMax = 3,
+    float $similarPercent = 0.70
+): bool { // ⭐ FIX: Cambiado levenshteinMax a 3 para más precisión
     $norm1 = $this->normalizeForComparison($str1);
     $norm2 = $this->normalizeForComparison($str2);
 
-    if (str_contains($norm1, $norm2) || str_contains($norm2, $norm1)) return true;
+    // ⭐ FIX: Agregar check de longitud para evitar falsos positivos en palabras muy diferentes
+    if (abs(strlen($norm1) - strlen($norm2)) > 2) {
+        return false;
+    }
+
+    if (str_contains($norm1, $norm2) || str_contains($norm2, $norm1)) {
+        return true;
+    }
 
     similar_text($norm1, $norm2, $percent);
-    if ($percent > $similarPercent * 100) return true;
+    if ($percent > $similarPercent * 100) {
+        return true;
+    }
 
-    if (levenshtein($norm1, $norm2) <= $levenshteinMax) return true;
+    if (levenshtein($norm1, $norm2) <= $levenshteinMax) {
+        return true;
+    }
 
     return false;
 }
+ 
 
 private function isDislikedOrAllergic(string $foodName, array $dislikedNorm, array $allergiesNorm): bool
 {
@@ -240,7 +257,16 @@ private function isDislikedOrAllergic(string $foodName, array $dislikedNorm, arr
     'seitán' => 'Seitán',
     'lentejas' => 'Lentejas',
     'garbanzos' => 'Garbanzos',
- 
+
+    // Agregar faltantes en español
+    'pollo muslo con piel' => 'Pollo muslo con piel',
+    'proteína en polvo' => 'Proteína en polvo',
+    'fideo' => 'Fideo',
+    'mantequilla de maní' => 'Mantequilla de maní',
+    'semillas de ajonjolí' => 'Semillas de ajonjolí',
+    'aceite de palta' => 'Aceite de palta',
+    'semillas de chía orgánicas' => 'Semillas de chía orgánicas',
+    'seitán' => 'Seitán',
 ];
  
 
@@ -461,7 +487,7 @@ private function generateDeterministicPlan($nutritionalData, $profile, $userName
             $mealCalories = round($macros['calories'] * $percentage);
             if (str_contains($mealName, 'Snack')) {
                 $snackType = str_contains($mealName, 'AM') ? 'AM' : 'PM';
-                $meals[$mealName] = $this->generateSnackOptions($mealCalories, $isLowBudget, $snackType, $dislikedFoods, $allergies);
+                $meals[$mealName] = $this->generateSnackOptions($mealCalories, $isLowBudget, $snackType, $dislikedFoods, $allergies, $foodPreferences);
             } else {
                 $meals[$mealName] = $this->generateDeterministicMealOptions(
                     $mealName,
@@ -882,35 +908,33 @@ private function validateGeneratedPlan($planData, $nutritionalData): array
     }
 
 
-
-    private function isFoodLowBudget($foodName): bool
-    {
-        $lowBudgetFoods = [
-            'huevo entero',
-            'pollo muslo',
-            'muslos',
-            'atún en lata',
-            'carne molida',
-            'arroz blanco',
-            'papa',
-            'fideos',
-            'avena tradicional',
-            'tortillas de maíz',
-            'pan de molde',
-            'aceite vegetal',
-            'maní',
-            'cacahuate',
-            'frijoles',
-            'lentejas'
-        ];
-
-        foreach ($lowBudgetFoods as $food) {
-            if (str_contains($foodName, $food)) {
-                return true;
-            }
+private function isFoodLowBudget($foodName): bool
+{
+    $lowBudgetFoods = [
+        'huevo entero',
+        'pollo muslo',
+        'muslos',
+        'atún en lata',
+        'carne molida',
+        'arroz blanco',
+        'papa',
+        'fideos',
+        'avena tradicional',
+        'pan de molde',
+        'aceite vegetal',
+        'maní',
+        'cacahuate',
+        'frijoles',
+        'lentejas'
+        // 'tortillas de maíz',  // ← REMOVIDO PARA PERMITIR EN ALTO PRESUPUESTO
+    ];
+    foreach ($lowBudgetFoods as $food) {
+        if (str_contains($foodName, $food)) {
+            return true;
         }
-        return false;
     }
+    return false;
+}
 
   private function extractPersonalizationData($profile, $userName): array
 {
@@ -1757,80 +1781,89 @@ private function calculateProteinPortionByFood($foodName, $targetProtein, $isLow
 }
 
 
-/**
- * Calcular porción de grasa según alimento específico
- */
-private function calculateFatPortionByFood($foodName, $targetFats, $isLowBudget = true): ?array
-{
+
+private function calculateFatPortionByFood(
+    $foodName,
+    $targetFats,
+    $isLowBudget = true
+): ?array {
     $nutritionMapLow = [
-        'Aceite de oliva' => [  // ⭐ CAMBIADO de 'Aceite vegetal'
-            'protein' => 0,
+        'Aceite vegetal' => [ // ⭐ FIX: Unificado a 'Aceite vegetal' para bajo presupuesto
+            'protein'  => 0,
             'calories' => 884,
-            'fats' => 100,
-            'carbs' => 0,
-            'density' => 0.92 // g/ml
-        ],
-        'Maní' => [
-            'protein' => 26,
-            'calories' => 567,
-            'fats' => 49,
-            'carbs' => 16
-        ],
-        'Aguacate' => [
-            'protein' => 2,
-            'calories' => 160,
-            'fats' => 15,
-            'carbs' => 9,
-            'unit' => 'unidad',
-            'unit_weight' => 200 // gramos por unidad promedio
-        ],
-         // ✅ AGREGAR ESTE:
-        'Mantequilla de maní casera' => [
-            'protein' => 25,
-            'calories' => 588,
-            'fats' => 50,
-            'carbs' => 20
+            'fats'     => 100,
+            'carbs'    => 0,
+            'density'  => 0.92, // g/ml
         ],
 
+        'Maní' => [
+            'protein'  => 26,
+            'calories' => 567,
+            'fats'     => 49,
+            'carbs'    => 16,
+        ],
+
+        'Aguacate' => [
+            'protein'      => 2,
+            'calories'     => 160,
+            'fats'         => 15,
+            'carbs'        => 9,
+            'unit'         => 'unidad',
+            'unit_weight'  => 200, // gramos por unidad promedio
+        ],
+
+        'Mantequilla de maní casera' => [
+            'protein'  => 25,
+            'calories' => 588,
+            'fats'     => 50,
+            'carbs'    => 20,
+        ],
     ];
 
     $nutritionMapHigh = [
         'Aceite de oliva extra virgen' => [
-            'protein' => 0,
+            'protein'  => 0,
             'calories' => 884,
-            'fats' => 100,
-            'carbs' => 0,
-            'density' => 0.92
+            'fats'     => 100,
+            'carbs'    => 0,
+            'density'  => 0.92,
         ],
+
         'Almendras' => [
-            'protein' => 21,
+            'protein'  => 21,
             'calories' => 579,
-            'fats' => 50,
-            'carbs' => 22
+            'fats'     => 50,
+            'carbs'    => 22,
         ],
+
         'Aguacate hass' => [
-            'protein' => 2,
-            'calories' => 160,
-            'fats' => 15,
-            'carbs' => 9,
-            'unit' => 'unidad',
-            'unit_weight' => 200
+            'protein'      => 2,
+            'calories'     => 160,
+            'fats'         => 15,
+            'carbs'        => 9,
+            'unit'         => 'unidad',
+            'unit_weight'  => 200,
         ],
+
         'Nueces' => [
-            'protein' => 15,
+            'protein'  => 15,
             'calories' => 654,
-            'fats' => 65,
-            'carbs' => 14
+            'fats'     => 65,
+            'carbs'    => 14,
         ],
+
         'Mantequilla de maní' => [
-            'protein' => 25,
+            'protein'  => 25,
             'calories' => 588,
-            'fats' => 50,
-            'carbs' => 20
+            'fats'     => 50,
+            'carbs'    => 20,
         ],
     ];
 
-    $nutritionMap = $isLowBudget ? $nutritionMapLow : array_merge($nutritionMapLow, $nutritionMapHigh);
+    $nutritionMap = $isLowBudget
+        ? $nutritionMapLow
+        : array_merge($nutritionMapLow, $nutritionMapHigh);
+
     $nutrition = $nutritionMap[$foodName] ?? null;
 
     if (!$nutrition) {
@@ -1839,18 +1872,20 @@ private function calculateFatPortionByFood($foodName, $targetFats, $isLowBudget 
     }
 
     $gramsNeeded = ($targetFats / $nutrition['fats']) * 100;
-    $calories = ($gramsNeeded / 100) * $nutrition['calories'];
-    $protein = ($gramsNeeded / 100) * $nutrition['protein'];
-    $carbs = ($gramsNeeded / 100) * $nutrition['carbs'];
+    $calories    = ($gramsNeeded / 100) * $nutrition['calories'];
+    $protein     = ($gramsNeeded / 100) * $nutrition['protein'];
+    $carbs       = ($gramsNeeded / 100) * $nutrition['carbs'];
 
     // Formatear porción según tipo de alimento
     if (str_contains(strtolower($foodName), 'aceite')) {
         // Aceites: mostrar en ml y cucharadas
-        $ml = round($gramsNeeded * (1 / ($nutrition['density'] ?? 0.92)));
+        $ml   = round($gramsNeeded * (1 / ($nutrition['density'] ?? 0.92)));
         $tbsp = max(1, round($ml / 15)); // 1 cucharada = 15ml
-        $portion = "{$tbsp} " . ($tbsp == 1 ? 'cucharada' : 'cucharadas') . " ({$ml}ml)";
 
-    } elseif (isset($nutrition['unit']) && isset($nutrition['unit_weight'])) {
+        $portion = "{$tbsp} "
+            . ($tbsp === 1 ? 'cucharada' : 'cucharadas')
+            . " ({$ml}ml)";
+    } elseif (isset($nutrition['unit'], $nutrition['unit_weight'])) {
         // Alimentos por unidad (aguacate)
         $fraction = $gramsNeeded / $nutrition['unit_weight'];
 
@@ -1862,21 +1897,23 @@ private function calculateFatPortionByFood($foodName, $targetFats, $isLowBudget 
             $portion = round($gramsNeeded) . "g (3/4 {$nutrition['unit']})";
         } else {
             $units = ceil($fraction);
-            $portion = round($gramsNeeded) . "g ({$units} " . ($units == 1 ? $nutrition['unit'] : $nutrition['unit'] . 's') . ")";
+            $portion = round($gramsNeeded)
+                . "g ({$units} "
+                . ($units === 1 ? $nutrition['unit'] : $nutrition['unit'] . 's')
+                . ")";
         }
-
     } else {
         // Frutos secos: mostrar en gramos
         $portion = round($gramsNeeded) . "g";
     }
 
     return [
-        'name' => $foodName,
-        'portion' => $portion,
-        'calories' => round($calories),
-        'protein' => round($protein, 1),
-        'fats' => round($targetFats),
-        'carbohydrates' => round($carbs, 1)
+        'name'          => $foodName,
+        'portion'       => $portion,
+        'calories'      => round($calories),
+        'protein'       => round($protein, 1),
+        'fats'          => round($targetFats),
+        'carbohydrates' => round($carbs, 1),
     ];
 }
 
@@ -1885,7 +1922,7 @@ private function calculateFatPortionByFood($foodName, $targetFats, $isLowBudget 
      * Base de datos nutricional específica por presupuesto
      */
 
-    private function generateSnackOptions($targetCalories, $isLowBudget, $snackType = 'AM', $dislikedFoods = '', $allergies = ''): array  // ⭐ AGREGAR PARÁMETRO
+    private function generateSnackOptions($targetCalories, $isLowBudget, $snackType = 'AM', $dislikedFoods = '', $allergies = '', $foodPreferences = []): array
     {
         $targetProtein = round($targetCalories * 0.30 / 4);
         $targetCarbs = round($targetCalories * 0.50 / 4);
@@ -1926,6 +1963,59 @@ private function calculateFatPortionByFood($foodName, $targetFats, $isLowBudget 
                     $options['Carbohidratos']['options'][] = $portionData;
                 }
             }
+        }
+
+        // ⭐ NUEVO: Agregar frutas favoritas como opción de Carbohidratos o Frutas
+        if (!empty($foodPreferences['fruits'])) {
+             if (!isset($options['Carbohidratos'])) {
+                 $options['Carbohidratos'] = ['options' => []];
+             }
+             
+             // Filtrar frutas por alergias/gustos
+             $favoriteFruits = $this->getFilteredFoodOptions($foodPreferences['fruits'], $dislikedFoods, $allergies, 5);
+             
+             foreach ($favoriteFruits as $fruitName) {
+                 // Intentar calcular porción (asumiendo que fruta es principalmente carbohidrato)
+                 // Usamos una lógica genérica para frutas si no tenemos un método específico público
+                 // Pero como tenemos getLowBudgetFruits que usa calculateFruitPortion, usaremos calculateFruitPortion
+                 // Asegurándonos que calculateFruitPortion exista (es private, pero estamos en la misma clase)
+                 
+                 // Normalizar nombre para el cálculo
+                 $normalizedName = $this->normalizeText($fruitName);
+                 $fruitKey = 'manzana'; // Default
+                 
+                 if (str_contains($normalizedName, 'platano') || str_contains($normalizedName, 'banana')) $fruitKey = 'platano';
+                 elseif (str_contains($normalizedName, 'naranja')) $fruitKey = 'naranja';
+                 elseif (str_contains($normalizedName, 'tuna')) $fruitKey = 'tuna';
+                 elseif (str_contains($normalizedName, 'papaya')) $fruitKey = 'papaya';
+                 elseif (str_contains($normalizedName, 'mango')) $fruitKey = 'mango';
+                 elseif (str_contains($normalizedName, 'piña')) $fruitKey = 'piña';
+                 elseif (str_contains($normalizedName, 'fresa') || str_contains($normalizedName, 'frutilla')) $fruitKey = 'fresa';
+                 elseif (str_contains($normalizedName, 'arandano')) $fruitKey = 'arandano';
+                 elseif (str_contains($normalizedName, 'sandia')) $fruitKey = 'sandia';
+                 elseif (str_contains($normalizedName, 'melon')) $fruitKey = 'melon';
+                 elseif (str_contains($normalizedName, 'uva')) $fruitKey = 'uva';
+                 elseif (str_contains($normalizedName, 'kiwi')) $fruitKey = 'kiwi';
+                 elseif (str_contains($normalizedName, 'pera')) $fruitKey = 'pera';
+                 elseif (str_contains($normalizedName, 'durazno') || str_contains($normalizedName, 'melocoton')) $fruitKey = 'durazno';
+                 
+                 // Calcular
+                 $portion = $this->calculateFruitPortion($fruitKey, $targetCalories);
+                 
+                 // Estimar macros (aprox para frutas: casi todo carbo)
+                 // Manzana media: 0.3g grasa, 0.5g prote, 25g carbos por 100g aprox, pero varía.
+                 // Usaremos una estimación basada en calorias target
+                 
+                 $options['Carbohidratos']['options'][] = [
+                    'name' => $fruitName, // Usar nombre original del usuario
+                    'portion' => $portion,
+                    'calories' => $targetCalories,
+                    'protein' => round($targetCalories * 0.02),
+                    'fats' => 0,
+                    'carbohydrates' => round($targetCalories * 0.24), // ~96% cal from carbs
+                    'description' => 'Opción saludable de fruta favorita'
+                 ];
+             }
         }
 
         // ===== GRASAS - CON FILTRO =====
@@ -1984,6 +2074,9 @@ private function calculateFatPortionByFood($foodName, $targetFats, $isLowBudget 
 
     // Agregar después de la línea ~1070 aproximadamente, dentro de la clase
 
+    // Método helper para calcular porción de fruta (copiado/movido si necesario, o asegurando visibilidad)
+
+
     private function getLowBudgetFruits($targetCalories): array
     {
         // Frutas económicas comunes
@@ -1996,6 +2089,8 @@ private function calculateFatPortionByFood($foodName, $targetFats, $isLowBudget 
                 'fats' => 0,
                 'carbohydrates' => round($targetCalories * 0.23)
             ],
+
+
             [
                 'name' => 'Manzana',
                 'portion' => $this->calculateFruitPortion('manzana', $targetCalories),
@@ -2922,7 +3017,9 @@ private function applyFoodPreferenceSystem($foodList, $mealType, $dislikedFoods,
     $dietaryStyle,
     $dislikedFoods = '',
     $foodPreferences = [],
-    $allergies = ''
+    $allergies = '',
+    $dislikedNorm = [],
+    $allergiesNorm = []
 ): array
 {
     // 🔴 NUEVA LÓGICA: Forzar 40/40/20 en CADA comida
@@ -2963,9 +3060,10 @@ private function applyFoodPreferenceSystem($foodList, $mealType, $dislikedFoods,
     if (str_contains($dietaryStyle, 'vegano')) {
         $options = $this->getVeganOptions($mealName, $adjustedProtein, $adjustedCarbs, $adjustedFats, $isLowBudget, $dislikedFoods, $foodPreferences, $allergies);
     } elseif (str_contains($dietaryStyle, 'vegetariano')) {
-        $options = $this->getVegetarianOptions($mealName, $adjustedProtein, $adjustedCarbs, $adjustedFats, $isLowBudget, $dislikedFoods, $foodPreferences, $allergies);
+        
+        $options = $this->getVegetarianOptions($mealName, $adjustedProtein, $adjustedCarbs, $adjustedFats, $isLowBudget, $dislikedFoods, $foodPreferences, $allergies, $dislikedNorm, $allergiesNorm);  
     } elseif (str_contains($dietaryStyle, 'keto')) {
-        $options = $this->getKetoOptions($mealName, $adjustedProtein, $adjustedCarbs, $adjustedFats, $isLowBudget, $dislikedFoods, $foodPreferences, $allergies);
+        $options = $this->getKetoOptions($mealName, $adjustedProtein, $adjustedCarbs, $adjustedFats, $isLowBudget, $dislikedFoods, $foodPreferences, $allergies, );
     } else {
         $options = $this->getOmnivorousOptions($mealName, $adjustedProtein, $adjustedCarbs, $adjustedFats, $isLowBudget, $dislikedFoods, $foodPreferences, $allergies);
     }
@@ -3061,11 +3159,8 @@ private function applyFoodPreferenceSystem($foodList, $mealType, $dislikedFoods,
     }
     
     // ⭐ Normalizar disliked/allergies ANTES de usarlos
-    $dislikedArray = array_filter(array_map('trim', explode(',', $dislikedFoods ?? '')), fn($item) => !empty($item));
-    $dislikedNorm = array_map([$this, 'normalizeForComparison'], $dislikedArray);
+    // Normalización ya recibida por parámetros
 
-    $allergiesArray = array_filter(array_map('trim', explode(',', $allergies ?? '')), fn($item) => !empty($item));
-    $allergiesNorm = array_map([$this, 'normalizeForComparison'], $allergiesArray);
     
     // ⭐ ELIMINADO: El bloque de "FORZAR FAVORITOS GENÉRICOS" que estaba aquí
     // Los favoritos ya se fuerzan dentro de getOmnivorousOptions() y similares
@@ -3123,196 +3218,195 @@ private function applyFoodPreferenceSystem($foodList, $mealType, $dislikedFoods,
     return $options;
 }
 
-
-    private function getKetoOptions(
-        $mealName,
-        $targetProtein,
-        $targetCarbs,
-        $targetFats,
-        $isLowBudget,
-        $dislikedFoods = '',
-        $foodPreferences = [],
-        $allergies = ''
-    ): array
-    {
-        $options = [];
-
-        // ===== CARBOHIDRATOS KETO =====
-        $carbOptions = ['Brócoli al vapor', 'Espinacas salteadas', 'Lechuga'];
-        $carbOptions = $this->prioritizeFoodList($carbOptions, $foodPreferences['carbs'] ?? []);
-        $filteredCarbs = $this->getFilteredFoodOptions($carbOptions, $dislikedFoods, $allergies, 3);
-
-        if (!empty($filteredCarbs)) {
-            $options['Carbohidratos'] = ['options' => []];
-            foreach ($filteredCarbs as $carbName) {
-                if ($carbName === 'Brócoli al vapor') {
-                    $options['Carbohidratos']['options'][] = [
-                        'name' => 'Brócoli al vapor',
-                        'portion' => '100g',
-                        'calories' => 28,
-                        'protein' => 2,
-                        'fats' => 0,
-                        'carbohydrates' => 2
-                    ];
-                } elseif ($carbName === 'Espinacas salteadas') {
-                    $options['Carbohidratos']['options'][] = [
-                        'name' => 'Espinacas salteadas',
-                        'portion' => '100g',
-                        'calories' => 23,
-                        'protein' => 3,
-                        'fats' => 0,
-                        'carbohydrates' => 1
-                    ];
-                } elseif ($carbName === 'Lechuga') {
-                    $options['Carbohidratos']['options'][] = [
-                        'name' => 'Lechuga',
-                        'portion' => '150g',
-                        'calories' => 15,
-                        'protein' => 1,
-                        'fats' => 0,
-                        'carbohydrates' => 2
-                    ];
-                }
+ 
+private function getKetoOptions(
+    $mealName,
+    $targetProtein,
+    $targetCarbs,
+    $targetFats,
+    $isLowBudget,
+    $dislikedFoods = '',
+    $foodPreferences = [],
+    $allergies = '',
+    $dislikedNorm = [],  // ← Agregado: Array normalizado de disliked
+    $allergiesNorm = []   // ← Agregado: Array normalizado de allergies
+): array {
+    $options = [];
+    // ===== CARBOHIDRATOS KETO =====
+    $carbOptions = ['Brócoli al vapor', 'Espinacas salteadas', 'Lechuga'];
+    $forcedCarbs = $this->getForcedFavoritesForMeal($mealName, 'Carbohidratos', $foodPreferences['carbs'] ?? []);
+    $carbOptions = $this->ensureForcedFavoritesInList($carbOptions, $forcedCarbs, $allergiesNorm, $dislikedNorm);
+    $carbOptions = $this->prioritizeFoodList($carbOptions, $foodPreferences['carbs'] ?? []);
+    $filteredCarbs = $this->getFilteredFoodOptions($carbOptions, $dislikedFoods, $allergies, 3);
+    if (!empty($filteredCarbs)) {
+        $options['Carbohidratos'] = ['options' => []];
+        foreach ($filteredCarbs as $carbName) {
+            if ($carbName === 'Brócoli al vapor') {
+                $options['Carbohidratos']['options'][] = [
+                    'name' => 'Brócoli al vapor',
+                    'portion' => '100g',
+                    'calories' => 28,
+                    'protein' => 2,
+                    'fats' => 0,
+                    'carbohydrates' => 2
+                ];
+            } elseif ($carbName === 'Espinacas salteadas') {
+                $options['Carbohidratos']['options'][] = [
+                    'name' => 'Espinacas salteadas',
+                    'portion' => '100g',
+                    'calories' => 23,
+                    'protein' => 3,
+                    'fats' => 0,
+                    'carbohydrates' => 1
+                ];
+            } elseif ($carbName === 'Lechuga') {
+                $options['Carbohidratos']['options'][] = [
+                    'name' => 'Lechuga',
+                    'portion' => '150g',
+                    'calories' => 15,
+                    'protein' => 1,
+                    'fats' => 0,
+                    'carbohydrates' => 2
+                ];
             }
         }
-
-        // ===== PROTEÍNAS KETO =====
-        if ($isLowBudget) {
-            $proteinOptions = ['Huevos enteros', 'Pollo muslo con piel', 'Carne molida 80/20'];
-        } else {
-            $proteinOptions = ['Salmón', 'Ribeye', 'Pechuga de pato'];
-        }
-        $proteinOptions = $this->filterAllergens($proteinOptions, $allergies);
-        $proteinOptions = $this->prioritizeFoodList($proteinOptions, $foodPreferences['proteins'] ?? []);
-        $filteredProteins = $this->getFilteredFoodOptions($proteinOptions, $dislikedFoods, $allergies, 3);
-
-        if (!empty($filteredProteins)) {
-            $options['Proteínas'] = ['options' => []];
-            foreach ($filteredProteins as $proteinName) {
-                if ($proteinName === 'Huevos enteros') {
-                    $eggUnits = round($targetProtein / 6);
-                    if ($eggUnits < 2) $eggUnits = 2;
-                    $options['Proteínas']['options'][] = [
-                        'name' => 'Huevos enteros',
-                        'portion' => sprintf('%d unidades', $eggUnits),
-                        'calories' => $eggUnits * 70,
-                        'protein' => $eggUnits * 6,
-                        'fats' => $eggUnits * 5,
-                        'carbohydrates' => round($eggUnits * 0.5)
-                    ];
-                } elseif ($proteinName === 'Pollo muslo con piel') {
-                    $grams = round($targetProtein * 3.5);
-                    $options['Proteínas']['options'][] = [
-                        'name' => 'Pollo muslo con piel',
-                        'portion' => sprintf('%dg (peso en crudo)', $grams),
-                        'calories' => round($targetProtein * 7.5),
-                        'protein' => round($targetProtein),
-                        'fats' => round($targetProtein * 0.4),
-                        'carbohydrates' => 0
-                    ];
-                } elseif ($proteinName === 'Carne molida 80/20') {
-                    $grams = round($targetProtein * 3.5);
-                    $options['Proteínas']['options'][] = [
-                        'name' => 'Carne molida 80/20',
-                        'portion' => sprintf('%dg (peso en crudo)', $grams),
-                        'calories' => round($targetProtein * 8.5),
-                        'protein' => round($targetProtein),
-                        'fats' => round($targetProtein * 0.5),
-                        'carbohydrates' => 0
-                    ];
-                } elseif ($proteinName === 'Salmón') {
-                    $grams = round($targetProtein * 4);
-                    $options['Proteínas']['options'][] = [
-                        'name' => 'Salmón',
-                        'portion' => sprintf('%dg (peso en crudo)', $grams),
-                        'calories' => round($targetProtein * 8.3),
-                        'protein' => round($targetProtein),
-                        'fats' => round($targetProtein * 0.48),
-                        'carbohydrates' => 0
-                    ];
-                } elseif ($proteinName === 'Ribeye') {
-                    $grams = round($targetProtein * 3.5);
-                    $options['Proteínas']['options'][] = [
-                        'name' => 'Ribeye',
-                        'portion' => sprintf('%dg (peso en crudo)', $grams),
-                        'calories' => round($targetProtein * 10.5),
-                        'protein' => round($targetProtein),
-                        'fats' => round($targetProtein * 0.7),
-                        'carbohydrates' => 0
-                    ];
-                } elseif ($proteinName === 'Pechuga de pato') {
-                    $grams = round($targetProtein * 3.7);
-                    $options['Proteínas']['options'][] = [
-                        'name' => 'Pechuga de pato',
-                        'portion' => sprintf('%dg (peso en crudo)', $grams),
-                        'calories' => round($targetProtein * 12),
-                        'protein' => round($targetProtein),
-                        'fats' => round($targetProtein * 0.8),
-                        'carbohydrates' => 0
-                    ];
-                }
-            }
-        }
-
-        // ===== GRASAS KETO =====
-        if ($isLowBudget) {
-            $fatOptions = ['Manteca de cerdo', 'Mantequilla', 'Aguacate'];
-        } else {
-            $fatOptions = ['Aceite MCT', 'Mantequilla ghee', 'Aguacate hass'];
-        }
-        $fatOptions = $this->prioritizeFoodList($fatOptions, $foodPreferences['fats'] ?? []);
-        $fatOptions = $this->getFilteredFoodOptions($fatOptions, $dislikedFoods, $allergies, count($fatOptions));
-        $filteredFats = $this->applyFoodPreferenceSystem($fatOptions, 'Keto-Grasas', '', 3);
-
-        if (!empty($filteredFats)) {
-            $options['Grasas'] = ['options' => []];
-            foreach ($filteredFats as $fatName) {
-                if (str_contains($fatName, 'Manteca') || str_contains($fatName, 'Aceite MCT')) {
-                    $tbsp = round($targetFats / 12);
-                    if ($tbsp < 1) $tbsp = 1;
-                    $options['Grasas']['options'][] = [
-                        'name' => $fatName,
-                        'portion' => sprintf('%d cucharadas', $tbsp),
-                        'calories' => round($targetFats * 9),
-                        'protein' => 0,
-                        'fats' => round($targetFats),
-                        'carbohydrates' => 0
-                    ];
-                } elseif (str_contains($fatName, 'Mantequilla')) {
-                    $grams = round($targetFats * 1.1);
-                    $options['Grasas']['options'][] = [
-                        'name' => $fatName,
-                        'portion' => sprintf('%dg', $grams),
-                        'calories' => round($targetFats * 8.5),
-                        'protein' => 0,
-                        'fats' => round($targetFats),
-                        'carbohydrates' => 0
-                    ];
-                } elseif (str_contains($fatName, 'Aguacate')) {
-                    $grams = round($targetFats * 6);
-                    $options['Grasas']['options'][] = [
-                        'name' => $fatName,
-                        'portion' => sprintf('%dg', $grams),
-                        'calories' => round($targetFats * 9.5),
-                        'protein' => round($targetFats * 0.15),
-                        'fats' => round($targetFats),
-                        'carbohydrates' => round($targetFats * 0.15)
-                    ];
-                }
-            }
-        }
-
-        // Agregar metadata
-        foreach ($options as $category => &$categoryData) {
-            if (isset($categoryData['options'])) {
-                foreach ($categoryData['options'] as &$option) {
-                    $this->addFoodMetadata($option, $isLowBudget);
-                }
-            }
-        }
-
-        return $options;
     }
+    // PROTEÍNAS KETO - ⭐ FORZADO
+    if ($isLowBudget) {
+        $proteinOptions = ['Huevos enteros', 'Pollo muslo con piel', 'Carne molida 80/20'];
+    } else {
+        $proteinOptions = ['Salmón', 'Ribeye', 'Pechuga de pato'];
+    }
+    $forcedProteins = $this->getForcedFavoritesForMeal($mealName, 'Proteínas', $foodPreferences['proteins'] ?? []);
+    $proteinOptions = $this->ensureForcedFavoritesInList($proteinOptions, $forcedProteins, $allergiesNorm, $dislikedNorm);
+    $proteinOptions = $this->filterAllergens($proteinOptions, $allergies);
+    $proteinOptions = $this->prioritizeFoodList($proteinOptions, $foodPreferences['proteins'] ?? []);
+    $filteredProteins = $this->getFilteredFoodOptions($proteinOptions, $dislikedFoods, $allergies, 3);
+    if (!empty($filteredProteins)) {
+        $options['Proteínas'] = ['options' => []];
+        foreach ($filteredProteins as $proteinName) {
+            if ($proteinName === 'Huevos enteros') {
+                $eggUnits = round($targetProtein / 6);
+                if ($eggUnits < 2) $eggUnits = 2;
+                $options['Proteínas']['options'][] = [
+                    'name' => 'Huevos enteros',
+                    'portion' => sprintf('%d unidades', $eggUnits),
+                    'calories' => $eggUnits * 70,
+                    'protein' => $eggUnits * 6,
+                    'fats' => $eggUnits * 5,
+                    'carbohydrates' => round($eggUnits * 0.5)
+                ];
+            } elseif ($proteinName === 'Pollo muslo con piel') {
+                $grams = round($targetProtein * 3.5);
+                $options['Proteínas']['options'][] = [
+                    'name' => 'Pollo muslo con piel',
+                    'portion' => sprintf('%dg (peso en crudo)', $grams),
+                    'calories' => round($targetProtein * 7.5),
+                    'protein' => round($targetProtein),
+                    'fats' => round($targetProtein * 0.4),
+                    'carbohydrates' => 0
+                ];
+            } elseif ($proteinName === 'Carne molida 80/20') {
+                $grams = round($targetProtein * 3.5);
+                $options['Proteínas']['options'][] = [
+                    'name' => 'Carne molida 80/20',
+                    'portion' => sprintf('%dg (peso en crudo)', $grams),
+                    'calories' => round($targetProtein * 8.5),
+                    'protein' => round($targetProtein),
+                    'fats' => round($targetProtein * 0.5),
+                    'carbohydrates' => 0
+                ];
+            } elseif ($proteinName === 'Salmón') {
+                $grams = round($targetProtein * 4);
+                $options['Proteínas']['options'][] = [
+                    'name' => 'Salmón',
+                    'portion' => sprintf('%dg (peso en crudo)', $grams),
+                    'calories' => round($targetProtein * 8.3),
+                    'protein' => round($targetProtein),
+                    'fats' => round($targetProtein * 0.48),
+                    'carbohydrates' => 0
+                ];
+            } elseif ($proteinName === 'Ribeye') {
+                $grams = round($targetProtein * 3.5);
+                $options['Proteínas']['options'][] = [
+                    'name' => 'Ribeye',
+                    'portion' => sprintf('%dg (peso en crudo)', $grams),
+                    'calories' => round($targetProtein * 10.5),
+                    'protein' => round($targetProtein),
+                    'fats' => round($targetProtein * 0.7),
+                    'carbohydrates' => 0
+                ];
+            } elseif ($proteinName === 'Pechuga de pato') {
+                $grams = round($targetProtein * 3.7);
+                $options['Proteínas']['options'][] = [
+                    'name' => 'Pechuga de pato',
+                    'portion' => sprintf('%dg (peso en crudo)', $grams),
+                    'calories' => round($targetProtein * 12),
+                    'protein' => round($targetProtein),
+                    'fats' => round($targetProtein * 0.8),
+                    'carbohydrates' => 0
+                ];
+            }
+        }
+    }
+    // GRASAS KETO - ⭐ FORZADO
+    if ($isLowBudget) {
+        $fatOptions = ['Manteca de cerdo', 'Mantequilla', 'Aguacate'];
+    } else {
+        $fatOptions = ['Aceite MCT', 'Mantequilla ghee', 'Aguacate hass'];
+    }
+    $forcedFats = $this->getForcedFavoritesForMeal($mealName, 'Grasas', $foodPreferences['fats'] ?? []);
+    $fatOptions = $this->ensureForcedFavoritesInList($fatOptions, $forcedFats, $allergiesNorm, $dislikedNorm);
+    $fatOptions = $this->prioritizeFoodList($fatOptions, $foodPreferences['fats'] ?? []);
+    $fatOptions = $this->getFilteredFoodOptions($fatOptions, $dislikedFoods, $allergies, count($fatOptions));
+    $filteredFats = $this->applyFoodPreferenceSystem($fatOptions, 'Keto-Grasas', '', 3);
+    if (!empty($filteredFats)) {
+        $options['Grasas'] = ['options' => []];
+        foreach ($filteredFats as $fatName) {
+            if (str_contains($fatName, 'Manteca') || str_contains($fatName, 'Aceite MCT')) {
+                $tbsp = round($targetFats / 12);
+                if ($tbsp < 1) $tbsp = 1;
+                $options['Grasas']['options'][] = [
+                    'name' => $fatName,
+                    'portion' => sprintf('%d cucharadas', $tbsp),
+                    'calories' => round($targetFats * 9),
+                    'protein' => 0,
+                    'fats' => round($targetFats),
+                    'carbohydrates' => 0
+                ];
+            } elseif (str_contains($fatName, 'Mantequilla')) {
+                $grams = round($targetFats * 1.1);
+                $options['Grasas']['options'][] = [
+                    'name' => $fatName,
+                    'portion' => sprintf('%dg', $grams),
+                    'calories' => round($targetFats * 8.5),
+                    'protein' => 0,
+                    'fats' => round($targetFats),
+                    'carbohydrates' => 0
+                ];
+            } elseif (str_contains($fatName, 'Aguacate')) {
+                $grams = round($targetFats * 6);
+                $options['Grasas']['options'][] = [
+                    'name' => $fatName,
+                    'portion' => sprintf('%dg', $grams),
+                    'calories' => round($targetFats * 9.5),
+                    'protein' => round($targetFats * 0.15),
+                    'fats' => round($targetFats),
+                    'carbohydrates' => round($targetFats * 0.15)
+                ];
+            }
+        }
+    }
+    // Agregar metadata
+    foreach ($options as $category => &$categoryData) {
+        if (isset($categoryData['options'])) {
+            foreach ($categoryData['options'] as &$option) {
+                $this->addFoodMetadata($option, $isLowBudget);
+            }
+        }
+    }
+    return $options;
+}
 
     private function getOmnivorousOptions(
     $mealName,
@@ -3323,148 +3417,118 @@ private function applyFoodPreferenceSystem($foodList, $mealType, $dislikedFoods,
     $dislikedFoods = '',
     $foodPreferences = [],
     $allergies = ''
-): array
-{
-    // ⭐ AGREGAR ESTO AL INICIO - Normalizar alergias y disgustos
+): array {
+    // Normalizar alergias y disgustos
     $dislikedArray = array_filter(array_map('trim', explode(',', $dislikedFoods)), fn($item) => !empty($item));
     $dislikedNorm = array_map([$this, 'normalizeForComparison'], $dislikedArray);
-
     $allergiesArray = array_filter(array_map('trim', explode(',', $allergies)), fn($item) => !empty($item));
     $allergiesNorm = array_map([$this, 'normalizeForComparison'], $allergiesArray);
-    // ⭐ FIN DE LO QUE AGREGASTE
-
     $options = [];
-
     if ($isLowBudget) {
         // PRESUPUESTO BAJO - OMNÍVORO
         if ($mealName === 'Desayuno') {
-            // ===== PROTEÍNAS =====
+            // PROTEÍNAS
             $proteinOptions = ['Huevo entero', 'Atún en lata', 'Pollo muslo'];
             $proteinOptions = $this->filterAllergens($proteinOptions, $allergies);
             $proteinOptions = $this->prioritizeFoodList($proteinOptions, $foodPreferences['proteins'] ?? []);
             $filteredProteins = $this->getFilteredFoodOptions($proteinOptions, $dislikedFoods, $allergies, 3);
-
             $options['Proteínas'] = ['options' => []];
             foreach ($filteredProteins as $proteinName) {
                 $portionData = $this->calculateProteinPortionByFood($proteinName, $targetProtein);
-                if ($portionData) {
-                    $options['Proteínas']['options'][] = $portionData;
-                }
+                if ($portionData) $options['Proteínas']['options'][] = $portionData;
             }
-
-            // ===== CARBOHIDRATOS =====
+            // CARBOHIDRATOS - ⭐ FORZADO DE FAVORITOS
             $carbOptions = ['Avena', 'Pan integral', 'Tortilla de maíz'];
+            $forcedCarbs = $this->getForcedFavoritesForMeal('Desayuno', 'Carbohidratos', $foodPreferences['carbs'] ?? []);
+            $carbOptions = $this->ensureForcedFavoritesInList($carbOptions, $forcedCarbs, $allergiesNorm, $dislikedNorm);
             $carbOptions = $this->prioritizeFoodList($carbOptions, $foodPreferences['carbs'] ?? []);
             $filteredCarbs = $this->getFilteredFoodOptions($carbOptions, $dislikedFoods, $allergies, 3);
-
             $options['Carbohidratos'] = ['options' => []];
             foreach ($filteredCarbs as $carbName) {
                 $portionData = $this->calculateCarbPortionByFood($carbName, $targetCarbs);
-                if ($portionData) {
-                    $options['Carbohidratos']['options'][] = $portionData;
-                }
+                if ($portionData) $options['Carbohidratos']['options'][] = $portionData;
             }
-
-            // ===== GRASAS =====
+            // GRASAS - ⭐ FORZADO DE FAVORITOS
             $fatOptions = ['Aceite vegetal', 'Maní', 'Aguacate'];
+            $forcedFats = $this->getForcedFavoritesForMeal('Desayuno', 'Grasas', $foodPreferences['fats'] ?? []);
+            $fatOptions = $this->ensureForcedFavoritesInList($fatOptions, $forcedFats, $allergiesNorm, $dislikedNorm);
             $fatOptions = $this->prioritizeFoodList($fatOptions, $foodPreferences['fats'] ?? []);
             $fatOptions = $this->getFilteredFoodOptions($fatOptions, $dislikedFoods, $allergies, count($fatOptions));
             $filteredFats = $this->applyFoodPreferenceSystem($fatOptions, 'Desayuno-Grasas', '', 3);
-
             $options['Grasas'] = ['options' => []];
             foreach ($filteredFats as $fatName) {
                 $portionData = $this->calculateFatPortionByFood($fatName, $targetFats);
-                if ($portionData) {
-                    $options['Grasas']['options'][] = $portionData;
-                }
+                if ($portionData) $options['Grasas']['options'][] = $portionData;
             }
-
         } elseif ($mealName === 'Almuerzo') {
-            // ===== PROTEÍNAS =====
-             $proteinOptions = ['Pollo muslo', 'Carne molida', 'Atún en lata', 'Pechuga de pollo'];
-
+            // PROTEÍNAS
+            $proteinOptions = ['Pollo muslo', 'Carne molida', 'Atún en lata', 'Pechuga de pollo'];
             $proteinOptions = $this->filterAllergens($proteinOptions, $allergies);
             $proteinOptions = $this->prioritizeFoodList($proteinOptions, $foodPreferences['proteins'] ?? []);
             $filteredProteins = $this->getFilteredFoodOptions($proteinOptions, $dislikedFoods, $allergies, 3);
-
             $options['Proteínas'] = ['options' => []];
             foreach ($filteredProteins as $proteinName) {
                 $portionData = $this->calculateProteinPortionByFood($proteinName, $targetProtein);
-                if ($portionData) {
-                    $options['Proteínas']['options'][] = $portionData;
-                }
+                if ($portionData) $options['Proteínas']['options'][] = $portionData;
             }
-
-            // ===== CARBOHIDRATOS =====
+            // CARBOHIDRATOS - ⭐ FORZADO
             $carbOrderPreference = ['Papa', 'Arroz blanco', 'Camote', 'Fideo', 'Frijoles', 'Quinua'];
+            $forcedCarbs = $this->getForcedFavoritesForMeal('Almuerzo', 'Carbohidratos', $foodPreferences['carbs'] ?? []);
+            $carbOrderPreference = $this->ensureForcedFavoritesInList($carbOrderPreference, $forcedCarbs, $allergiesNorm, $dislikedNorm);
             $carbOrderPreference = $this->prioritizeFoodList($carbOrderPreference, $foodPreferences['carbs'] ?? []);
             $selectedCarbs = $this->getFilteredFoodOptions($carbOrderPreference, $dislikedFoods, $allergies, 6);
             $selectedCarbs = $this->applyFoodPreferenceSystem($selectedCarbs, 'Almuerzo-Carbos', '', 6);
-
             $options['Carbohidratos'] = ['options' => []];
             foreach ($selectedCarbs as $foodName) {
                 $portionData = $this->calculateCarbPortionByFood($foodName, $targetCarbs);
-                if ($portionData) {
-                    $options['Carbohidratos']['options'][] = $portionData;
-                }
+                if ($portionData) $options['Carbohidratos']['options'][] = $portionData;
             }
-
-            // ===== GRASAS =====
+            // GRASAS - ⭐ FORZADO
             $fatOptions = ['Aceite vegetal', 'Maní', 'Aguacate'];
+            $forcedFats = $this->getForcedFavoritesForMeal('Almuerzo', 'Grasas', $foodPreferences['fats'] ?? []);
+            $fatOptions = $this->ensureForcedFavoritesInList($fatOptions, $forcedFats, $allergiesNorm, $dislikedNorm);
             $fatOptions = $this->prioritizeFoodList($fatOptions, $foodPreferences['fats'] ?? []);
             $fatOptions = $this->getFilteredFoodOptions($fatOptions, $dislikedFoods, $allergies, count($fatOptions));
             $filteredFats = $this->applyFoodPreferenceSystem($fatOptions, 'Almuerzo-Grasas', '', 3);
-
             $options['Grasas'] = ['options' => []];
             foreach ($filteredFats as $fatName) {
                 $portionData = $this->calculateFatPortionByFood($fatName, $targetFats);
-                if ($portionData) {
-                    $options['Grasas']['options'][] = $portionData;
-                }
+                if ($portionData) $options['Grasas']['options'][] = $portionData;
             }
-
         } else { // Cena
-            // ===== PROTEÍNAS =====
+            // PROTEÍNAS
             $proteinOptions = ['Atún en lata', 'Pollo muslo', 'Carne molida', 'Huevo entero'];
-
             $proteinOptions = $this->filterAllergens($proteinOptions, $allergies);
             $proteinOptions = $this->prioritizeFoodList($proteinOptions, $foodPreferences['proteins'] ?? []);
             $filteredProteins = $this->getFilteredFoodOptions($proteinOptions, $dislikedFoods, $allergies, 3);
-
             $options['Proteínas'] = ['options' => []];
             foreach ($filteredProteins as $proteinName) {
                 $portionData = $this->calculateProteinPortionByFood($proteinName, $targetProtein);
-                if ($portionData) {
-                    $options['Proteínas']['options'][] = $portionData;
-                }
+                if ($portionData) $options['Proteínas']['options'][] = $portionData;
             }
-
-            // ===== CARBOHIDRATOS =====
-            $carbOptions = ['Arroz blanco', 'Frijoles', 'Tortilla de maíz', 'Papa'];
+            // CARBOHIDRATOS - ⭐ FORZADO
+            $carbOptions = ['Arroz blanco', 'Frijoles', 'Tortilla de maíz', 'Papa', 'Pan integral', 'Fideo', 'Pasta integral']; // Se agregaron más opciones base
+            $forcedCarbs = $this->getForcedFavoritesForMeal('Cena', 'Carbohidratos', $foodPreferences['carbs'] ?? []);
+            $carbOptions = $this->ensureForcedFavoritesInList($carbOptions, $forcedCarbs, $allergiesNorm, $dislikedNorm);
             $carbOptions = $this->prioritizeFoodList($carbOptions, $foodPreferences['carbs'] ?? []);
             $filteredCarbs = $this->getFilteredFoodOptions($carbOptions, $dislikedFoods, $allergies, 4);
             $filteredCarbs = $this->applyFoodPreferenceSystem($filteredCarbs, 'Cena-Carbos', '', 3);
-
             $options['Carbohidratos'] = ['options' => []];
             foreach ($filteredCarbs as $carbName) {
                 $portionData = $this->calculateCarbPortionByFood($carbName, $targetCarbs);
-                if ($portionData) {
-                    $options['Carbohidratos']['options'][] = $portionData;
-                }
+                if ($portionData) $options['Carbohidratos']['options'][] = $portionData;
             }
-
-            // ===== GRASAS =====
+            // GRASAS - ⭐ FORZADO
             $fatOptions = ['Aceite vegetal', 'Maní', 'Aguacate'];
+            $forcedFats = $this->getForcedFavoritesForMeal('Cena', 'Grasas', $foodPreferences['fats'] ?? []);
+            $fatOptions = $this->ensureForcedFavoritesInList($fatOptions, $forcedFats, $allergiesNorm, $dislikedNorm);
             $fatOptions = $this->prioritizeFoodList($fatOptions, $foodPreferences['fats'] ?? []);
             $fatOptions = $this->getFilteredFoodOptions($fatOptions, $dislikedFoods, $allergies, count($fatOptions));
             $filteredFats = $this->applyFoodPreferenceSystem($fatOptions, 'Cena-Grasas', '', 3);
-
             $options['Grasas'] = ['options' => []];
             foreach ($filteredFats as $fatName) {
                 $portionData = $this->calculateFatPortionByFood($fatName, $targetFats);
-                if ($portionData) {
-                    $options['Grasas']['options'][] = $portionData;
-                }
+                if ($portionData) $options['Grasas']['options'][] = $portionData;
             }
         }
     } else {
@@ -3473,14 +3537,11 @@ private function applyFoodPreferenceSystem($foodList, $mealType, $dislikedFoods,
             // PROTEÍNAS
             $proteinOptions = ['Claras + Huevo entero', 'Yogurt griego alto en proteínas', 'Proteína whey'];
             $proteinOptions = $this->filterAllergens($proteinOptions, $allergies);
-
             // ⭐ CORRECCIÓN AQUÍ - Cambiar $allergies y $dislikedFoods por los arrays normalizados
             $forcedFavorites = $this->getForcedFavoritesForMeal('Desayuno', 'Proteínas', $foodPreferences['proteins'] ?? []);
             $proteinOptions = $this->ensureForcedFavoritesInList($proteinOptions, $forcedFavorites, $allergiesNorm, $dislikedNorm);
-
             $proteinOptions = $this->prioritizeFoodList($proteinOptions, $foodPreferences['proteins'] ?? []);
             $filteredProteins = $this->getFilteredFoodOptions($proteinOptions, $dislikedFoods, $allergies, 3);
-
             $options['Proteínas'] = ['options' => []];
             foreach ($filteredProteins as $proteinName) {
                 $portionData = $this->calculateProteinPortionByFood($proteinName, $targetProtein, false);
@@ -3488,12 +3549,10 @@ private function applyFoodPreferenceSystem($foodList, $mealType, $dislikedFoods,
                     $options['Proteínas']['options'][] = $portionData;
                 }
             }
-
             // CARBOHIDRATOS
-            $carbOptions = ['Avena orgánica', 'Pan integral artesanal'];
+            $carbOptions = ['Avena orgánica', 'Pan integral artesanal', 'Tortilla de maíz'];  // ← AGREGADO AQUÍ PARA PRESUPUESTO ALTO
             $carbOptions = $this->prioritizeFoodList($carbOptions, $foodPreferences['carbs'] ?? []);
             $filteredCarbs = $this->getFilteredFoodOptions($carbOptions, $dislikedFoods, $allergies, 3);
-
             $options['Carbohidratos'] = ['options' => []];
             foreach ($filteredCarbs as $carbName) {
                 $portionData = $this->calculateCarbPortionByFood($carbName, $targetCarbs);
@@ -3501,13 +3560,11 @@ private function applyFoodPreferenceSystem($foodList, $mealType, $dislikedFoods,
                     $options['Carbohidratos']['options'][] = $portionData;
                 }
             }
-
             // GRASAS
             $fatOptions = ['Aceite de oliva extra virgen', 'Almendras', 'Aguacate hass'];
             $fatOptions = $this->prioritizeFoodList($fatOptions, $foodPreferences['fats'] ?? []);
             $fatOptions = $this->getFilteredFoodOptions($fatOptions, $dislikedFoods, $allergies, count($fatOptions));
             $filteredFats = $this->applyFoodPreferenceSystem($fatOptions, 'Desayuno-Grasas', '', 3);
-
             $options['Grasas'] = ['options' => []];
             foreach ($filteredFats as $fatName) {
                 $portionData = $this->calculateFatPortionByFood($fatName, $targetFats, false);
@@ -3515,19 +3572,15 @@ private function applyFoodPreferenceSystem($foodList, $mealType, $dislikedFoods,
                     $options['Grasas']['options'][] = $portionData;
                 }
             }
-
         } elseif ($mealName === 'Almuerzo') {
             // PROTEÍNAS
             $proteinOptions = ['Pechuga de pollo', 'Salmón fresco', 'Carne de res magra', 'Atún en lata', 'Pechuga de pavo'];
             $proteinOptions = $this->filterAllergens($proteinOptions, $allergies);
-
             // ⭐ CORRECCIÓN AQUÍ
             $forcedFavorites = $this->getForcedFavoritesForMeal('Almuerzo', 'Proteínas', $foodPreferences['proteins'] ?? []);
             $proteinOptions = $this->ensureForcedFavoritesInList($proteinOptions, $forcedFavorites, $allergiesNorm, $dislikedNorm);
-
             $proteinOptions = $this->prioritizeFoodList($proteinOptions, $foodPreferences['proteins'] ?? []);
             $filteredProteins = $this->getFilteredFoodOptions($proteinOptions, $dislikedFoods, $allergies, 3);
-
             $options['Proteínas'] = ['options' => []];
             foreach ($filteredProteins as $proteinName) {
                 $portionData = $this->calculateProteinPortionByFood($proteinName, $targetProtein, false);
@@ -3535,13 +3588,11 @@ private function applyFoodPreferenceSystem($foodList, $mealType, $dislikedFoods,
                     $options['Proteínas']['options'][] = $portionData;
                 }
             }
-
             // CARBOHIDRATOS
-            $carbOrderPreference = ['Papa', 'Arroz blanco', 'Camote', 'Fideo', 'Frijoles', 'Quinua'];
+            $carbOrderPreference = ['Papa', 'Arroz blanco', 'Camote', 'Fideo', 'Frijoles', 'Quinua', 'Tortilla de maíz'];  // ← AGREGADO AQUÍ PARA PRESUPUESTO ALTO
             $carbOrderPreference = $this->prioritizeFoodList($carbOrderPreference, $foodPreferences['carbs'] ?? []);
             $selectedCarbs = $this->getFilteredFoodOptions($carbOrderPreference, $dislikedFoods, $allergies, 6);
             $selectedCarbs = $this->applyFoodPreferenceSystem($selectedCarbs, 'Almuerzo-Carbos', '', 6);
-
             $options['Carbohidratos'] = ['options' => []];
             foreach ($selectedCarbs as $foodName) {
                 $portionData = $this->calculateCarbPortionByFood($foodName, $targetCarbs);
@@ -3549,13 +3600,11 @@ private function applyFoodPreferenceSystem($foodList, $mealType, $dislikedFoods,
                     $options['Carbohidratos']['options'][] = $portionData;
                 }
             }
-
             // GRASAS
             $fatOptions = ['Aceite de oliva extra virgen', 'Almendras', 'Nueces', 'Aguacate hass'];
             $fatOptions = $this->prioritizeFoodList($fatOptions, $foodPreferences['fats'] ?? []);
             $fatOptions = $this->getFilteredFoodOptions($fatOptions, $dislikedFoods, $allergies, count($fatOptions));
             $filteredFats = $this->applyFoodPreferenceSystem($fatOptions, 'Almuerzo-Grasas', '', 3);
-
             $options['Grasas'] = ['options' => []];
             foreach ($filteredFats as $fatName) {
                 $portionData = $this->calculateFatPortionByFood($fatName, $targetFats, false);
@@ -3563,7 +3612,6 @@ private function applyFoodPreferenceSystem($foodList, $mealType, $dislikedFoods,
                     $options['Grasas']['options'][] = $portionData;
                 }
             }
-
         } else { // Cena
             // PROTEÍNAS
             $proteinOptions = [
@@ -3575,14 +3623,11 @@ private function applyFoodPreferenceSystem($foodList, $mealType, $dislikedFoods,
                 'Carne de res magra'
             ];
             $proteinOptions = $this->filterAllergens($proteinOptions, $allergies);
-
             // ⭐ CORRECCIÓN AQUÍ
             $forcedFavorites = $this->getForcedFavoritesForMeal('Cena', 'Proteínas', $foodPreferences['proteins'] ?? []);
             $proteinOptions = $this->ensureForcedFavoritesInList($proteinOptions, $forcedFavorites, $allergiesNorm, $dislikedNorm);
-
             $proteinOptions = $this->prioritizeFoodList($proteinOptions, $foodPreferences['proteins'] ?? []);
             $filteredProteins = $this->getFilteredFoodOptions($proteinOptions, $dislikedFoods, $allergies, 3);
-
             $options['Proteínas'] = ['options' => []];
             foreach ($filteredProteins as $proteinName) {
                 $portionData = $this->calculateProteinPortionByFood($proteinName, $targetProtein, false);
@@ -3590,12 +3635,10 @@ private function applyFoodPreferenceSystem($foodList, $mealType, $dislikedFoods,
                     $options['Proteínas']['options'][] = $portionData;
                 }
             }
-
             // CARBOHIDRATOS
-            $carbOptions = ['Arroz blanco', 'Quinua', 'Frijoles'];
+            $carbOptions = ['Arroz blanco', 'Quinua', 'Frijoles', 'Tortilla de maíz'];  // ← AGREGADO AQUÍ PARA PRESUPUESTO ALTO
             $carbOptions = $this->prioritizeFoodList($carbOptions, $foodPreferences['carbs'] ?? []);
             $filteredCarbs = $this->getFilteredFoodOptions($carbOptions, $dislikedFoods, $allergies, 3);
-
             $options['Carbohidratos'] = ['options' => []];
             foreach ($filteredCarbs as $carbName) {
                 $portionData = $this->calculateCarbPortionByFood($carbName, $targetCarbs);
@@ -3603,13 +3646,11 @@ private function applyFoodPreferenceSystem($foodList, $mealType, $dislikedFoods,
                     $options['Carbohidratos']['options'][] = $portionData;
                 }
             }
-
             // GRASAS
             $fatOptions = ['Aceite de oliva extra virgen', 'Almendras', 'Nueces'];
             $fatOptions = $this->prioritizeFoodList($fatOptions, $foodPreferences['fats'] ?? []);
             $fatOptions = $this->getFilteredFoodOptions($fatOptions, $dislikedFoods, $allergies, count($fatOptions));
             $filteredFats = $this->applyFoodPreferenceSystem($fatOptions, "{$mealName}-Grasas", '', 3);
-
             $options['Grasas'] = ['options' => []];
             foreach ($filteredFats as $fatName) {
                 $portionData = $this->calculateFatPortionByFood($fatName, $targetFats, false);
@@ -3619,7 +3660,6 @@ private function applyFoodPreferenceSystem($foodList, $mealType, $dislikedFoods,
             }
         }
     }
-
     // Agregar metadata a todas las opciones
     foreach ($options as $category => &$categoryData) {
         if (isset($categoryData['options'])) {
@@ -3628,10 +3668,9 @@ private function applyFoodPreferenceSystem($foodList, $mealType, $dislikedFoods,
             }
         }
     }
-
     return $options;
 }
-
+ 
 
 
 
@@ -3771,468 +3810,459 @@ private function calculateCarbPortionByFood($foodName, $targetCarbs): ?array
      * OPCIONES PARA VEGETARIANOS - Completamente dinámico
      */
 
-    private function getVegetarianOptions(
-        $mealName,
-        $targetProtein,
-        $targetCarbs,
-        $targetFats,
-        $isLowBudget,
-        $dislikedFoods = '',
-        $foodPreferences = [],
-        $allergies = ''
-    ): array
-    {
-        $options = [];
-
-        if ($mealName === 'Desayuno') {
-            // PROTEÍNAS
-            if ($isLowBudget) {
-                $proteinOptions = ['Huevos enteros', 'Yogurt natural', 'Queso fresco'];
-            } else {
-                $proteinOptions = ['Huevos enteros', 'Yogurt griego', 'Queso cottage'];
-            }
-            $proteinOptions = $this->prioritizeFoodList($proteinOptions, $foodPreferences['proteins'] ?? []);
-            $proteinOptions = $this->filterAllergens($proteinOptions, $allergies);
-            $filteredProteins = $this->getFilteredFoodOptions($proteinOptions, $dislikedFoods, $allergies, 3);
-
-            if (!empty($filteredProteins)) {
-                $options['Proteínas'] = ['options' => []];
-                foreach ($filteredProteins as $proteinName) {
-                    if ($proteinName === 'Huevos enteros') {
-                        $eggUnits = round($targetProtein / 6);
-                        if ($eggUnits < 2) $eggUnits = 2;
-                        $options['Proteínas']['options'][] = [
-                            'name' => 'Huevos enteros',
-                            'portion' => sprintf('%d unidades', $eggUnits),
-                            'calories' => $eggUnits * 70,
-                            'protein' => $eggUnits * 6,
-                            'fats' => $eggUnits * 5,
-                            'carbohydrates' => round($eggUnits * 0.5)
-                        ];
-                    } elseif (str_contains($proteinName, 'Yogurt')) {
-                        $yogurtGrams = round($targetProtein * ($isLowBudget ? 12.5 : 7.7));
-                        $options['Proteínas']['options'][] = [
-                            'name' => $proteinName,
-                            'portion' => sprintf('%dg', $yogurtGrams),
-                            'calories' => round($yogurtGrams * ($isLowBudget ? 0.61 : 0.9)),
-                            'protein' => round($targetProtein),
-                            'fats' => round($yogurtGrams * ($isLowBudget ? 0.033 : 0.05)),
-                            'carbohydrates' => round($yogurtGrams * ($isLowBudget ? 0.047 : 0.04))
-                        ];
-                    } elseif (str_contains($proteinName, 'Queso')) {
-                        $cheeseGrams = round($targetProtein * 4.5);
-                        $options['Proteínas']['options'][] = [
-                            'name' => $proteinName,
-                            'portion' => sprintf('%dg', $cheeseGrams),
-                            'calories' => round($cheeseGrams * ($isLowBudget ? 1.85 : 0.98)),
-                            'protein' => round($targetProtein),
-                            'fats' => round($cheeseGrams * ($isLowBudget ? 0.10 : 0.04)),
-                            'carbohydrates' => round($cheeseGrams * ($isLowBudget ? 0.04 : 0.03))
-                        ];
-                    }
-                }
-            }
-
-            // CARBOHIDRATOS
-            $carbOptions = $isLowBudget
-                ? ['Avena', 'Pan integral', 'Tortilla de maíz']
-                : ['Avena orgánica', 'Pan integral artesanal', 'Quinua'];
-            $carbOptions = $this->prioritizeFoodList($carbOptions, $foodPreferences['carbs'] ?? []);
-            $filteredCarbs = $this->getFilteredFoodOptions($carbOptions, $dislikedFoods, $allergies, 3);
-
-            if (!empty($filteredCarbs)) {
-                $options['Carbohidratos'] = ['options' => []];
-                foreach ($filteredCarbs as $carbName) {
-                    $portionData = $this->calculateCarbPortionByFood($carbName, $targetCarbs);
-                    if ($portionData) {
-                        $options['Carbohidratos']['options'][] = $portionData;
-                    }
-                }
-            }
-
-        } elseif ($mealName === 'Almuerzo') {
-            // PROTEÍNAS
-            if ($isLowBudget) {
-                $proteinOptions = ['Lentejas cocidas', 'Frijoles negros cocidos', 'Tofu firme'];
-            } else {
-                $proteinOptions = ['Tempeh', 'Seitán', 'Queso panela a la plancha'];
-            }
-            $proteinOptions = $this->prioritizeFoodList($proteinOptions, $foodPreferences['proteins'] ?? []);
-            $filteredProteins = $this->getFilteredFoodOptions($proteinOptions, $dislikedFoods, $allergies, 3);
-
-            if (!empty($filteredProteins)) {
-                $options['Proteínas'] = ['options' => []];
-                foreach ($filteredProteins as $proteinName) {
-                    if (str_contains($proteinName, 'Lentejas')) {
-                        $grams = round($targetProtein * 11.1);
-                        $options['Proteínas']['options'][] = [
-                            'name' => 'Lentejas cocidas',
-                            'portion' => sprintf('%dg (peso cocido)', $grams),
-                            'calories' => round($grams * 1.16),
-                            'protein' => round($targetProtein),
-                            'fats' => round($grams * 0.004),
-                            'carbohydrates' => round($grams * 0.20)
-                        ];
-                    } elseif (str_contains($proteinName, 'Frijoles')) {
-                        $grams = round($targetProtein * 11.5);
-                        $options['Proteínas']['options'][] = [
-                            'name' => 'Frijoles negros cocidos',
-                            'portion' => sprintf('%dg (peso cocido)', $grams),
-                            'calories' => round($grams * 1.32),
-                            'protein' => round($targetProtein),
-                            'fats' => round($grams * 0.005),
-                            'carbohydrates' => round($grams * 0.24)
-                        ];
-                    } elseif (str_contains($proteinName, 'Tofu')) {
-                        $grams = round($targetProtein * 12.5);
-                        $options['Proteínas']['options'][] = [
-                            'name' => 'Tofu firme',
-                            'portion' => sprintf('%dg', $grams),
-                            'calories' => round($grams * 1.44),
-                            'protein' => round($targetProtein),
-                            'fats' => round($grams * 0.09),
-                            'carbohydrates' => round($grams * 0.03)
-                        ];
-                    } elseif (str_contains($proteinName, 'Tempeh')) {
-                        $grams = round($targetProtein * 5.3);
-                        $options['Proteínas']['options'][] = [
-                            'name' => 'Tempeh',
-                            'portion' => sprintf('%dg', $grams),
-                            'calories' => round($grams * 1.93),
-                            'protein' => round($targetProtein),
-                            'fats' => round($grams * 0.11),
-                            'carbohydrates' => round($grams * 0.09)
-                        ];
-                    } elseif (str_contains($proteinName, 'Seitán')) {
-                        $grams = round($targetProtein * 4);
-                        $options['Proteínas']['options'][] = [
-                            'name' => 'Seitán',
-                            'portion' => sprintf('%dg', $grams),
-                            'calories' => round($grams * 3.7),
-                            'protein' => round($targetProtein),
-                            'fats' => round($grams * 0.02),
-                            'carbohydrates' => round($grams * 0.14)
-                        ];
-                    } elseif (str_contains($proteinName, 'Queso panela')) {
-                        $grams = round($targetProtein * 3.8);
-                        $options['Proteínas']['options'][] = [
-                            'name' => 'Queso panela a la plancha',
-                            'portion' => sprintf('%dg', $grams),
-                            'calories' => round($grams * 3.2),
-                            'protein' => round($targetProtein),
-                            'fats' => round($grams * 0.22),
-                            'carbohydrates' => round($grams * 0.03)
-                        ];
-                    }
-                }
-            }
-
-            // CARBOHIDRATOS
-            $carbOptions = ['Papa', 'Arroz blanco', 'Camote', 'Pasta integral', 'Quinua'];
-            $carbOptions = $this->prioritizeFoodList($carbOptions, $foodPreferences['carbs'] ?? []);
-            $filteredCarbs = $this->getFilteredFoodOptions($carbOptions, $dislikedFoods, $allergies, 5);
-
-            if (!empty($filteredCarbs)) {
-                $options['Carbohidratos'] = ['options' => []];
-                foreach ($filteredCarbs as $carbName) {
-                    $portionData = $this->calculateCarbPortionByFood($carbName, $targetCarbs);
-                    if ($portionData) {
-                        $options['Carbohidratos']['options'][] = $portionData;
-                    }
-                }
-            }
-
-        } else { // Cena
-            // PROTEÍNAS
-            if ($isLowBudget) {
-                $proteinOptions = ['Huevos revueltos', 'Garbanzos cocidos', 'Queso Oaxaca'];
-            } else {
-                $proteinOptions = ['Yogurt griego con granola proteica', 'Proteína vegetal en polvo', 'Ricotta con hierbas'];
-            }
-            $proteinOptions = $this->prioritizeFoodList($proteinOptions, $foodPreferences['proteins'] ?? []);
-            $filteredProteins = $this->getFilteredFoodOptions($proteinOptions, $dislikedFoods, $allergies, 3);
-
-            if (!empty($filteredProteins)) {
-                $options['Proteínas'] = ['options' => []];
-                foreach ($filteredProteins as $proteinName) {
-                    if (str_contains($proteinName, 'Huevos')) {
-                        $eggUnits = round($targetProtein / 6);
-                        if ($eggUnits < 2) $eggUnits = 2;
-                        $options['Proteínas']['options'][] = [
-                            'name' => 'Huevos revueltos',
-                            'portion' => sprintf('%d unidades', $eggUnits),
-                            'calories' => $eggUnits * 70,
-                            'protein' => $eggUnits * 6,
-                            'fats' => $eggUnits * 5,
-                            'carbohydrates' => round($eggUnits * 0.5)
-                        ];
-                    } elseif (str_contains($proteinName, 'Garbanzos')) {
-                        $grams = round($targetProtein * 12.2);
-                        $options['Proteínas']['options'][] = [
-                            'name' => 'Garbanzos cocidos',
-                            'portion' => sprintf('%dg (peso cocido)', $grams),
-                            'calories' => round($grams * 1.64),
-                            'protein' => round($targetProtein),
-                            'fats' => round($grams * 0.03),
-                            'carbohydrates' => round($grams * 0.27)
-                        ];
-                    } elseif (str_contains($proteinName, 'Yogurt')) {
-                        $grams = round($targetProtein * 5);
-                        $options['Proteínas']['options'][] = [
-                            'name' => 'Yogurt griego con granola proteica',
-                            'portion' => sprintf('%dg yogurt + 30g granola', $grams),
-                            'calories' => round($grams * 0.9 + 150),
-                            'protein' => round($targetProtein),
-                            'fats' => round($grams * 0.05 + 5),
-                            'carbohydrates' => round($grams * 0.04 + 20)
-                        ];
-                    } elseif (str_contains($proteinName, 'Proteína vegetal')) {
-                        $grams = round($targetProtein * 1.25);
-                        $options['Proteínas']['options'][] = [
-                            'name' => 'Proteína vegetal en polvo',
-                            'portion' => sprintf('%dg (%d scoops)', $grams, max(1, round($grams / 30))),
-                            'calories' => round($grams * 3.8),
-                            'protein' => round($targetProtein),
-                            'fats' => round($grams * 0.02),
-                            'carbohydrates' => round($grams * 0.08)
-                        ];
-                    } elseif (str_contains($proteinName, 'Ricotta')) {
-                        $grams = round($targetProtein * 9);
-                        $options['Proteínas']['options'][] = [
-                            'name' => 'Ricotta con hierbas',
-                            'portion' => sprintf('%dg', $grams),
-                            'calories' => round($grams * 1.74),
-                            'protein' => round($targetProtein),
-                            'fats' => round($grams * 0.13),
-                            'carbohydrates' => round($grams * 0.03)
-                        ];
-                    } else {
-                        $grams = round($targetProtein * 5.5);
-                        $options['Proteínas']['options'][] = [
-                            'name' => $proteinName,
-                            'portion' => sprintf('%dg', $grams),
-                            'calories' => round($grams * 3.5),
-                            'protein' => round($targetProtein),
-                            'fats' => round($grams * 0.28),
-                            'carbohydrates' => round($grams * 0.02)
-                        ];
-                    }
-                }
-            }
-
-            // CARBOHIDRATOS
-            $carbOptions = ['Arroz blanco', 'Quinua', 'Frijoles'];
-            $carbOptions = $this->prioritizeFoodList($carbOptions, $foodPreferences['carbs'] ?? []);
-            $filteredCarbs = $this->getFilteredFoodOptions($carbOptions, $dislikedFoods, $allergies, 3);
-
-            if (!empty($filteredCarbs)) {
-                $options['Carbohidratos'] = ['options' => []];
-                foreach ($filteredCarbs as $carbName) {
-                    $portionData = $this->calculateCarbPortionByFood($carbName, $targetCarbs);
-                    if ($portionData) {
-                        $options['Carbohidratos']['options'][] = $portionData;
-                    }
-                }
-            }
-        }
-
-        // GRASAS (para todas las comidas)
+     private function getVegetarianOptions(
+    $mealName,
+    $targetProtein,
+    $targetCarbs,
+    $targetFats,
+    $isLowBudget,
+    $dislikedFoods = '',
+    $foodPreferences = [],
+    $allergies = '',
+    $dislikedNorm = [], // ← Agregado
+    $allergiesNorm = [] // ← Agregado
+): array {
+    $options = [];
+    if ($mealName === 'Desayuno') {
+        // PROTEÍNAS - ⭐ FORZADO
         if ($isLowBudget) {
-            $fatOptions = ['Aceite vegetal', 'Crema de cacahuate', 'Semillas de girasol'];
+            $proteinOptions = ['Huevos enteros', 'Yogurt natural', 'Queso fresco'];
         } else {
-            $fatOptions = ['Aceite de oliva extra virgen', 'Nueces', 'Semillas de chía'];
+            $proteinOptions = ['Huevos enteros', 'Yogurt griego', 'Queso cottage'];
         }
-        $fatOptions = $this->prioritizeFoodList($fatOptions, $foodPreferences['fats'] ?? []);
-        $fatOptions = $this->getFilteredFoodOptions($fatOptions, $dislikedFoods, $allergies, count($fatOptions));
-        $filteredFats = $this->applyFoodPreferenceSystem($fatOptions, "{$mealName}-Grasas", '', 3);
-
-        if (!empty($filteredFats)) {
-            $options['Grasas'] = ['options' => []];
-            foreach ($filteredFats as $fatName) {
-                $portionData = $this->calculateFatPortionByFood($fatName, $targetFats, $isLowBudget);
+        $forcedProteins = $this->getForcedFavoritesForMeal($mealName, 'Proteínas', $foodPreferences['proteins'] ?? []);
+        $proteinOptions = $this->ensureForcedFavoritesInList($proteinOptions, $forcedProteins, $allergiesNorm, $dislikedNorm);
+        $proteinOptions = $this->prioritizeFoodList($proteinOptions, $foodPreferences['proteins'] ?? []);
+        $proteinOptions = $this->filterAllergens($proteinOptions, $allergies);
+        $filteredProteins = $this->getFilteredFoodOptions($proteinOptions, $dislikedFoods, $allergies, 3);
+        if (!empty($filteredProteins)) {
+            $options['Proteínas'] = ['options' => []];
+            foreach ($filteredProteins as $proteinName) {
+                if ($proteinName === 'Huevos enteros') {
+                    $eggUnits = round($targetProtein / 6);
+                    if ($eggUnits < 2) $eggUnits = 2;
+                    $options['Proteínas']['options'][] = [
+                        'name' => 'Huevos enteros',
+                        'portion' => sprintf('%d unidades', $eggUnits),
+                        'calories' => $eggUnits * 70,
+                        'protein' => $eggUnits * 6,
+                        'fats' => $eggUnits * 5,
+                        'carbohydrates' => round($eggUnits * 0.5)
+                    ];
+                } elseif (str_contains($proteinName, 'Yogurt')) {
+                    $yogurtGrams = round($targetProtein * ($isLowBudget ? 12.5 : 7.7));
+                    $options['Proteínas']['options'][] = [
+                        'name' => $proteinName,
+                        'portion' => sprintf('%dg', $yogurtGrams),
+                        'calories' => round($yogurtGrams * ($isLowBudget ? 0.61 : 0.9)),
+                        'protein' => round($targetProtein),
+                        'fats' => round($yogurtGrams * ($isLowBudget ? 0.033 : 0.05)),
+                        'carbohydrates' => round($yogurtGrams * ($isLowBudget ? 0.047 : 0.04))
+                    ];
+                } elseif (str_contains($proteinName, 'Queso')) {
+                    $cheeseGrams = round($targetProtein * 4.5);
+                    $options['Proteínas']['options'][] = [
+                        'name' => $proteinName,
+                        'portion' => sprintf('%dg', $cheeseGrams),
+                        'calories' => round($cheeseGrams * ($isLowBudget ? 1.85 : 0.98)),
+                        'protein' => round($targetProtein),
+                        'fats' => round($cheeseGrams * ($isLowBudget ? 0.10 : 0.04)),
+                        'carbohydrates' => round($cheeseGrams * ($isLowBudget ? 0.04 : 0.03))
+                    ];
+                }
+            }
+        }
+        // CARBOHIDRATOS - ⭐ FORZADO
+        $carbOptions = $isLowBudget
+            ? ['Avena', 'Pan integral', 'Tortilla de maíz']
+            : ['Avena orgánica', 'Pan integral artesanal', 'Quinua'];
+        $forcedCarbs = $this->getForcedFavoritesForMeal($mealName, 'Carbohidratos', $foodPreferences['carbs'] ?? []);
+        $carbOptions = $this->ensureForcedFavoritesInList($carbOptions, $forcedCarbs, $allergiesNorm, $dislikedNorm);
+        $carbOptions = $this->prioritizeFoodList($carbOptions, $foodPreferences['carbs'] ?? []);
+        $filteredCarbs = $this->getFilteredFoodOptions($carbOptions, $dislikedFoods, $allergies, 3);
+        if (!empty($filteredCarbs)) {
+            $options['Carbohidratos'] = ['options' => []];
+            foreach ($filteredCarbs as $carbName) {
+                $portionData = $this->calculateCarbPortionByFood($carbName, $targetCarbs);
                 if ($portionData) {
-                    $options['Grasas']['options'][] = $portionData;
+                    $options['Carbohidratos']['options'][] = $portionData;
                 }
             }
         }
-
-        // Agregar metadata
-        foreach ($options as $category => &$categoryData) {
-            if (isset($categoryData['options'])) {
-                foreach ($categoryData['options'] as &$option) {
-                    $this->addFoodMetadata($option, $isLowBudget);
-                }
-            }
-        }
-
-        return $options;
-    }
-
-
-
-    private function getVeganOptions(
-        $mealName,
-        $targetProtein,
-        $targetCarbs,
-        $targetFats,
-        $isLowBudget,
-        $dislikedFoods = '',
-        $foodPreferences = [],
-        $allergies = ''
-    ): array
-    {
-        $options = [];
-
-        if ($mealName === 'Desayuno') {
-            // PROTEÍNAS VEGANAS
-            $proteinOptions = ['Tofu firme', 'Lentejas cocidas', 'Garbanzos cocidos'];
-            $proteinOptions = $this->filterAllergens($proteinOptions, $allergies);
-            $proteinOptions = $this->prioritizeFoodList($proteinOptions, $foodPreferences['proteins'] ?? []);
-            $filteredProteins = $this->getFilteredFoodOptions($proteinOptions, $dislikedFoods, $allergies, 3);
-
-            if (!empty($filteredProteins)) {
-                $options['Proteínas'] = ['options' => []];
-                foreach ($filteredProteins as $proteinName) {
-                    if ($proteinName === 'Tofu firme') {
-                        $tofuGrams = round($targetProtein * 12.5);
-                        $options['Proteínas']['options'][] = [
-                            'name' => 'Tofu firme',
-                            'portion' => sprintf('%dg', $tofuGrams),
-                            'calories' => round($tofuGrams * 1.44),
-                            'protein' => round($targetProtein),
-                            'fats' => round($tofuGrams * 0.09),
-                            'carbohydrates' => round($tofuGrams * 0.03)
-                        ];
-                    } elseif ($proteinName === 'Lentejas cocidas') {
-                        $lentejasGrams = round($targetProtein * 11);
-                        $options['Proteínas']['options'][] = [
-                            'name' => 'Lentejas cocidas',
-                            'portion' => sprintf('%dg (peso cocido)', $lentejasGrams),
-                            'calories' => round($lentejasGrams * 1.16),
-                            'protein' => round($targetProtein),
-                            'fats' => round($lentejasGrams * 0.004),
-                            'carbohydrates' => round($lentejasGrams * 0.2)
-                        ];
-                    } elseif ($proteinName === 'Garbanzos cocidos') {
-                        $garbanzosGrams = round($targetProtein * 12);
-                        $options['Proteínas']['options'][] = [
-                            'name' => 'Garbanzos cocidos',
-                            'portion' => sprintf('%dg (peso cocido)', $garbanzosGrams),
-                            'calories' => round($garbanzosGrams * 1.64),
-                            'protein' => round($targetProtein),
-                            'fats' => round($garbanzosGrams * 0.03),
-                            'carbohydrates' => round($garbanzosGrams * 0.27)
-                        ];
-                    }
-                }
-            }
-
-            // CARBOHIDRATOS
-            $carbOptions = ['Avena tradicional', 'Pan integral', 'Quinua cocida'];
-            $carbOptions = $this->prioritizeFoodList($carbOptions, $foodPreferences['carbs'] ?? []);
-            $filteredCarbs = $this->getFilteredFoodOptions($carbOptions, $dislikedFoods, $allergies, 3);
-
-            if (!empty($filteredCarbs)) {
-                $options['Carbohidratos'] = ['options' => []];
-                foreach ($filteredCarbs as $carbName) {
-                    $portionData = $this->calculateCarbPortionByFood($carbName, $targetCarbs);
-                    if ($portionData) {
-                        $options['Carbohidratos']['options'][] = $portionData;
-                    }
-                }
-            }
-
-        } elseif ($mealName === 'Almuerzo' || $mealName === 'Cena') {
-            // PROTEÍNAS
-            $proteinOptions = ['Seitán', 'Tempeh', 'Hamburguesa de lentejas'];
-            $proteinOptions = $this->filterAllergens($proteinOptions, $allergies);
-            $proteinOptions = $this->prioritizeFoodList($proteinOptions, $foodPreferences['proteins'] ?? []);
-            $filteredProteins = $this->getFilteredFoodOptions($proteinOptions, $dislikedFoods, $allergies, 3);
-
-            if (!empty($filteredProteins)) {
-                $options['Proteínas'] = ['options' => []];
-                foreach ($filteredProteins as $proteinName) {
-                    if ($proteinName === 'Seitán') {
-                        $seitanGrams = round($targetProtein * 4);
-                        $options['Proteínas']['options'][] = [
-                            'name' => 'Seitán',
-                            'portion' => sprintf('%dg', $seitanGrams),
-                            'calories' => round($seitanGrams * 3.7),
-                            'protein' => round($targetProtein),
-                            'fats' => round($seitanGrams * 0.02),
-                            'carbohydrates' => round($seitanGrams * 0.14)
-                        ];
-                    } elseif ($proteinName === 'Tempeh') {
-                        $tempehGrams = round($targetProtein * 5.3);
-                        $options['Proteínas']['options'][] = [
-                            'name' => 'Tempeh',
-                            'portion' => sprintf('%dg', $tempehGrams),
-                            'calories' => round($tempehGrams * 1.93),
-                            'protein' => round($targetProtein),
-                            'fats' => round($tempehGrams * 0.11),
-                            'carbohydrates' => round($tempehGrams * 0.09)
-                        ];
-                    } elseif ($proteinName === 'Hamburguesa de lentejas') {
-                        $hamburguesaGrams = round($targetProtein * 6);
-                        $options['Proteínas']['options'][] = [
-                            'name' => 'Hamburguesa de lentejas',
-                            'portion' => sprintf('%dg (2 unidades)', $hamburguesaGrams),
-                            'calories' => round($targetProtein * 7),
-                            'protein' => round($targetProtein),
-                            'fats' => round($targetProtein * 0.3),
-                            'carbohydrates' => round($targetProtein * 1.5)
-                        ];
-                    }
-                }
-            }
-
-            // CARBOHIDRATOS
-            $carbOptions = ['Arroz blanco', 'Papa', 'Quinua'];
-            $carbOptions = $this->prioritizeFoodList($carbOptions, $foodPreferences['carbs'] ?? []);
-            $filteredCarbs = $this->getFilteredFoodOptions($carbOptions, $dislikedFoods, $allergies, 3);
-
-            if (!empty($filteredCarbs)) {
-                $options['Carbohidratos'] = ['options' => []];
-                foreach ($filteredCarbs as $carbName) {
-                    $portionData = $this->calculateCarbPortionByFood($carbName, $targetCarbs);
-                    if ($portionData) {
-                        $options['Carbohidratos']['options'][] = $portionData;
-                    }
-                }
-            }
-        }
-
-        // GRASAS VEGANAS (para todas las comidas)
+    } elseif ($mealName === 'Almuerzo') {
+        // PROTEÍNAS
         if ($isLowBudget) {
-            $fatOptions = ['Aceite vegetal', 'Maní', 'Aguacate'];
+            $proteinOptions = ['Lentejas cocidas', 'Frijoles negros cocidos', 'Tofu firme'];
         } else {
-            $fatOptions = ['Aceite de oliva extra virgen', 'Almendras', 'Aguacate hass'];
+            $proteinOptions = ['Tempeh', 'Seitán', 'Queso panela a la plancha'];
         }
-        $fatOptions = $this->prioritizeFoodList($fatOptions, $foodPreferences['fats'] ?? []);
-        $fatOptions = $this->getFilteredFoodOptions($fatOptions, $dislikedFoods, $allergies, count($fatOptions));
-        $filteredFats = $this->applyFoodPreferenceSystem($fatOptions, "{$mealName}-Grasas", '', 3);
-
-        if (!empty($filteredFats)) {
-            $options['Grasas'] = ['options' => []];
-            foreach ($filteredFats as $fatName) {
-                $portionData = $this->calculateFatPortionByFood($fatName, $targetFats, $isLowBudget);
+        $forcedProteins = $this->getForcedFavoritesForMeal($mealName, 'Proteínas', $foodPreferences['proteins'] ?? []);
+        $proteinOptions = $this->ensureForcedFavoritesInList($proteinOptions, $forcedProteins, $allergiesNorm, $dislikedNorm);
+        $proteinOptions = $this->prioritizeFoodList($proteinOptions, $foodPreferences['proteins'] ?? []);
+        $proteinOptions = $this->filterAllergens($proteinOptions, $allergies);
+        $filteredProteins = $this->getFilteredFoodOptions($proteinOptions, $dislikedFoods, $allergies, 3);
+        if (!empty($filteredProteins)) {
+            $options['Proteínas'] = ['options' => []];
+            foreach ($filteredProteins as $proteinName) {
+                if (str_contains($proteinName, 'Lentejas')) {
+                    $grams = round($targetProtein * 11.1);
+                    $options['Proteínas']['options'][] = [
+                        'name' => 'Lentejas cocidas',
+                        'portion' => sprintf('%dg (peso cocido)', $grams),
+                        'calories' => round($grams * 1.16),
+                        'protein' => round($targetProtein),
+                        'fats' => round($grams * 0.004),
+                        'carbohydrates' => round($grams * 0.20)
+                    ];
+                } elseif (str_contains($proteinName, 'Frijoles')) {
+                    $grams = round($targetProtein * 11.5);
+                    $options['Proteínas']['options'][] = [
+                        'name' => 'Frijoles negros cocidos',
+                        'portion' => sprintf('%dg (peso cocido)', $grams),
+                        'calories' => round($grams * 1.32),
+                        'protein' => round($targetProtein),
+                        'fats' => round($grams * 0.005),
+                        'carbohydrates' => round($grams * 0.24)
+                    ];
+                } elseif (str_contains($proteinName, 'Tofu')) {
+                    $grams = round($targetProtein * 12.5);
+                    $options['Proteínas']['options'][] = [
+                        'name' => 'Tofu firme',
+                        'portion' => sprintf('%dg', $grams),
+                        'calories' => round($grams * 1.44),
+                        'protein' => round($targetProtein),
+                        'fats' => round($grams * 0.09),
+                        'carbohydrates' => round($grams * 0.03)
+                    ];
+                } elseif (str_contains($proteinName, 'Tempeh')) {
+                    $grams = round($targetProtein * 5.3);
+                    $options['Proteínas']['options'][] = [
+                        'name' => 'Tempeh',
+                        'portion' => sprintf('%dg', $grams),
+                        'calories' => round($grams * 1.93),
+                        'protein' => round($targetProtein),
+                        'fats' => round($grams * 0.11),
+                        'carbohydrates' => round($grams * 0.09)
+                    ];
+                } elseif (str_contains($proteinName, 'Seitán')) {
+                    $grams = round($targetProtein * 4);
+                    $options['Proteínas']['options'][] = [
+                        'name' => 'Seitán',
+                        'portion' => sprintf('%dg', $grams),
+                        'calories' => round($grams * 3.7),
+                        'protein' => round($targetProtein),
+                        'fats' => round($grams * 0.02),
+                        'carbohydrates' => round($grams * 0.14)
+                    ];
+                } elseif (str_contains($proteinName, 'Queso panela')) {
+                    $grams = round($targetProtein * 3.8);
+                    $options['Proteínas']['options'][] = [
+                        'name' => 'Queso panela a la plancha',
+                        'portion' => sprintf('%dg', $grams),
+                        'calories' => round($grams * 3.2),
+                        'protein' => round($targetProtein),
+                        'fats' => round($grams * 0.22),
+                        'carbohydrates' => round($grams * 0.03)
+                    ];
+                }
+            }
+        }
+        // CARBOHIDRATOS
+        $carbOptions = ['Papa', 'Arroz blanco', 'Camote', 'Pasta integral', 'Quinua'];
+        $carbOptions = $this->prioritizeFoodList($carbOptions, $foodPreferences['carbs'] ?? []);
+        $filteredCarbs = $this->getFilteredFoodOptions($carbOptions, $dislikedFoods, $allergies, 5);
+        if (!empty($filteredCarbs)) {
+            $options['Carbohidratos'] = ['options' => []];
+            foreach ($filteredCarbs as $carbName) {
+                $portionData = $this->calculateCarbPortionByFood($carbName, $targetCarbs);
                 if ($portionData) {
-                    $options['Grasas']['options'][] = $portionData;
+                    $options['Carbohidratos']['options'][] = $portionData;
                 }
             }
         }
-
-        // Agregar metadata
-        foreach ($options as $category => &$categoryData) {
-            if (isset($categoryData['options'])) {
-                foreach ($categoryData['options'] as &$option) {
-                    $this->addFoodMetadata($option, $isLowBudget);
+    } else { // Cena
+        // PROTEÍNAS
+        if ($isLowBudget) {
+            $proteinOptions = ['Huevos revueltos', 'Garbanzos cocidos', 'Queso Oaxaca'];
+        } else {
+            $proteinOptions = ['Yogurt griego con granola proteica', 'Proteína vegetal en polvo', 'Ricotta con hierbas'];
+        }
+        $proteinOptions = $this->prioritizeFoodList($proteinOptions, $foodPreferences['proteins'] ?? []);
+        $filteredProteins = $this->getFilteredFoodOptions($proteinOptions, $dislikedFoods, $allergies, 3);
+        if (!empty($filteredProteins)) {
+            $options['Proteínas'] = ['options' => []];
+            foreach ($filteredProteins as $proteinName) {
+                if (str_contains($proteinName, 'Huevos')) {
+                    $eggUnits = round($targetProtein / 6);
+                    if ($eggUnits < 2) $eggUnits = 2;
+                    $options['Proteínas']['options'][] = [
+                        'name' => 'Huevos revueltos',
+                        'portion' => sprintf('%d unidades', $eggUnits),
+                        'calories' => $eggUnits * 70,
+                        'protein' => $eggUnits * 6,
+                        'fats' => $eggUnits * 5,
+                        'carbohydrates' => round($eggUnits * 0.5)
+                    ];
+                } elseif (str_contains($proteinName, 'Garbanzos')) {
+                    $grams = round($targetProtein * 12.2);
+                    $options['Proteínas']['options'][] = [
+                        'name' => 'Garbanzos cocidos',
+                        'portion' => sprintf('%dg (peso cocido)', $grams),
+                        'calories' => round($grams * 1.64),
+                        'protein' => round($targetProtein),
+                        'fats' => round($grams * 0.03),
+                        'carbohydrates' => round($grams * 0.27)
+                    ];
+                } elseif (str_contains($proteinName, 'Yogurt')) {
+                    $grams = round($targetProtein * 5);
+                    $options['Proteínas']['options'][] = [
+                        'name' => 'Yogurt griego con granola proteica',
+                        'portion' => sprintf('%dg yogurt + 30g granola', $grams),
+                        'calories' => round($grams * 0.9 + 150),
+                        'protein' => round($targetProtein),
+                        'fats' => round($grams * 0.05 + 5),
+                        'carbohydrates' => round($grams * 0.04 + 20)
+                    ];
+                } elseif (str_contains($proteinName, 'Proteína vegetal')) {
+                    $grams = round($targetProtein * 1.25);
+                    $options['Proteínas']['options'][] = [
+                        'name' => 'Proteína vegetal en polvo',
+                        'portion' => sprintf('%dg (%d scoops)', $grams, max(1, round($grams / 30))),
+                        'calories' => round($grams * 3.8),
+                        'protein' => round($targetProtein),
+                        'fats' => round($grams * 0.02),
+                        'carbohydrates' => round($grams * 0.08)
+                    ];
+                } elseif (str_contains($proteinName, 'Ricotta')) {
+                    $grams = round($targetProtein * 9);
+                    $options['Proteínas']['options'][] = [
+                        'name' => 'Ricotta con hierbas',
+                        'portion' => sprintf('%dg', $grams),
+                        'calories' => round($grams * 1.74),
+                        'protein' => round($targetProtein),
+                        'fats' => round($grams * 0.13),
+                        'carbohydrates' => round($grams * 0.03)
+                    ];
+                } else {
+                    $grams = round($targetProtein * 5.5);
+                    $options['Proteínas']['options'][] = [
+                        'name' => $proteinName,
+                        'portion' => sprintf('%dg', $grams),
+                        'calories' => round($grams * 3.5),
+                        'protein' => round($targetProtein),
+                        'fats' => round($grams * 0.28),
+                        'carbohydrates' => round($grams * 0.02)
+                    ];
                 }
             }
         }
-
-        return $options;
+        // CARBOHIDRATOS
+        $carbOptions = ['Arroz blanco', 'Quinua', 'Frijoles'];
+        $carbOptions = $this->prioritizeFoodList($carbOptions, $foodPreferences['carbs'] ?? []);
+        $filteredCarbs = $this->getFilteredFoodOptions($carbOptions, $dislikedFoods, $allergies, 3);
+        if (!empty($filteredCarbs)) {
+            $options['Carbohidratos'] = ['options' => []];
+            foreach ($filteredCarbs as $carbName) {
+                $portionData = $this->calculateCarbPortionByFood($carbName, $targetCarbs);
+                if ($portionData) {
+                    $options['Carbohidratos']['options'][] = $portionData;
+                }
+            }
+        }
     }
+    // GRASAS (para todas) - ⭐ FORZADO
+    if ($isLowBudget) {
+        $fatOptions = ['Aceite vegetal', 'Crema de cacahuate', 'Semillas de girasol'];
+    } else {
+        $fatOptions = ['Aceite de oliva extra virgen', 'Nueces', 'Semillas de chía'];
+    }
+    $forcedFats = $this->getForcedFavoritesForMeal($mealName, 'Grasas', $foodPreferences['fats'] ?? []);
+    $fatOptions = $this->ensureForcedFavoritesInList($fatOptions, $forcedFats, $allergiesNorm, $dislikedNorm);
+    $fatOptions = $this->prioritizeFoodList($fatOptions, $foodPreferences['fats'] ?? []);
+    $fatOptions = $this->getFilteredFoodOptions($fatOptions, $dislikedFoods, $allergies, count($fatOptions));
+    $filteredFats = $this->applyFoodPreferenceSystem($fatOptions, "{$mealName}-Grasas", '', 3);
+    if (!empty($filteredFats)) {
+        $options['Grasas'] = ['options' => []];
+        foreach ($filteredFats as $fatName) {
+            $portionData = $this->calculateFatPortionByFood($fatName, $targetFats, $isLowBudget);
+            if ($portionData) {
+                $options['Grasas']['options'][] = $portionData;
+            }
+        }
+    }
+    // Agregar metadata
+    foreach ($options as $category => &$categoryData) {
+        if (isset($categoryData['options'])) {
+            foreach ($categoryData['options'] as &$option) {
+                $this->addFoodMetadata($option, $isLowBudget);
+            }
+        }
+    }
+    return $options;
+}
+
+ private function getVeganOptions(
+    $mealName,
+    $targetProtein,
+    $targetCarbs,
+    $targetFats,
+    $isLowBudget,
+    $dislikedFoods = '',
+    $foodPreferences = [],
+    $allergies = '',
+    $dislikedNorm = [],  // ← Agregado
+    $allergiesNorm = []   // ← Agregado
+): array {
+    $options = [];
+    if ($mealName === 'Desayuno') {
+        // PROTEÍNAS - ⭐ FORZADO
+        $proteinOptions = ['Tofu firme', 'Lentejas cocidas', 'Garbanzos cocidos'];
+        $forcedProteins = $this->getForcedFavoritesForMeal($mealName, 'Proteínas', $foodPreferences['proteins'] ?? []);
+        $proteinOptions = $this->ensureForcedFavoritesInList($proteinOptions, $forcedProteins, $allergiesNorm, $dislikedNorm);
+        $proteinOptions = $this->filterAllergens($proteinOptions, $allergies);
+        $proteinOptions = $this->prioritizeFoodList($proteinOptions, $foodPreferences['proteins'] ?? []);
+        $filteredProteins = $this->getFilteredFoodOptions($proteinOptions, $dislikedFoods, $allergies, 3);
+        if (!empty($filteredProteins)) {
+            $options['Proteínas'] = ['options' => []];
+            foreach ($filteredProteins as $proteinName) {
+                if ($proteinName === 'Tofu firme') {
+                    $tofuGrams = round($targetProtein * 12.5);
+                    $options['Proteínas']['options'][] = [
+                        'name' => 'Tofu firme',
+                        'portion' => sprintf('%dg', $tofuGrams),
+                        'calories' => round($tofuGrams * 1.44),
+                        'protein' => round($targetProtein),
+                        'fats' => round($tofuGrams * 0.09),
+                        'carbohydrates' => round($tofuGrams * 0.03)
+                    ];
+                } elseif ($proteinName === 'Lentejas cocidas') {
+                    $lentejasGrams = round($targetProtein * 11);
+                    $options['Proteínas']['options'][] = [
+                        'name' => 'Lentejas cocidas',
+                        'portion' => sprintf('%dg (peso cocido)', $lentejasGrams),
+                        'calories' => round($lentejasGrams * 1.16),
+                        'protein' => round($targetProtein),
+                        'fats' => round($lentejasGrams * 0.004),
+                        'carbohydrates' => round($lentejasGrams * 0.2)
+                    ];
+                } elseif ($proteinName === 'Garbanzos cocidos') {
+                    $garbanzosGrams = round($targetProtein * 12);
+                    $options['Proteínas']['options'][] = [
+                        'name' => 'Garbanzos cocidos',
+                        'portion' => sprintf('%dg (peso cocido)', $garbanzosGrams),
+                        'calories' => round($garbanzosGrams * 1.64),
+                        'protein' => round($targetProtein),
+                        'fats' => round($garbanzosGrams * 0.03),
+                        'carbohydrates' => round($garbanzosGrams * 0.27)
+                    ];
+                }
+            }
+        }
+        // CARBOHIDRATOS - ⭐ FORZADO
+        $carbOptions = ['Avena tradicional', 'Pan integral', 'Quinua cocida'];
+        $forcedCarbs = $this->getForcedFavoritesForMeal($mealName, 'Carbohidratos', $foodPreferences['carbs'] ?? []);
+        $carbOptions = $this->ensureForcedFavoritesInList($carbOptions, $forcedCarbs, $allergiesNorm, $dislikedNorm);
+        $carbOptions = $this->prioritizeFoodList($carbOptions, $foodPreferences['carbs'] ?? []);
+        $filteredCarbs = $this->getFilteredFoodOptions($carbOptions, $dislikedFoods, $allergies, 3);
+        if (!empty($filteredCarbs)) {
+            $options['Carbohidratos'] = ['options' => []];
+            foreach ($filteredCarbs as $carbName) {
+                $portionData = $this->calculateCarbPortionByFood($carbName, $targetCarbs);
+                if ($portionData) {
+                    $options['Carbohidratos']['options'][] = $portionData;
+                }
+            }
+        }
+    } elseif ($mealName === 'Almuerzo' || $mealName === 'Cena') {
+        // PROTEÍNAS - ⭐ FORZADO
+        $proteinOptions = ['Seitán', 'Tempeh', 'Hamburguesa de lentejas'];
+        $forcedProteins = $this->getForcedFavoritesForMeal($mealName, 'Proteínas', $foodPreferences['proteins'] ?? []);
+        $proteinOptions = $this->ensureForcedFavoritesInList($proteinOptions, $forcedProteins, $allergiesNorm, $dislikedNorm);
+        $proteinOptions = $this->filterAllergens($proteinOptions, $allergies);
+        $proteinOptions = $this->prioritizeFoodList($proteinOptions, $foodPreferences['proteins'] ?? []);
+        $filteredProteins = $this->getFilteredFoodOptions($proteinOptions, $dislikedFoods, $allergies, 3);
+        if (!empty($filteredProteins)) {
+            $options['Proteínas'] = ['options' => []];
+            foreach ($filteredProteins as $proteinName) {
+                if ($proteinName === 'Seitán') {
+                    $seitanGrams = round($targetProtein * 4);
+                    $options['Proteínas']['options'][] = [
+                        'name' => 'Seitán',
+                        'portion' => sprintf('%dg', $seitanGrams),
+                        'calories' => round($seitanGrams * 3.7),
+                        'protein' => round($targetProtein),
+                        'fats' => round($seitanGrams * 0.02),
+                        'carbohydrates' => round($seitanGrams * 0.14)
+                    ];
+                } elseif ($proteinName === 'Tempeh') {
+                    $tempehGrams = round($targetProtein * 5.3);
+                    $options['Proteínas']['options'][] = [
+                        'name' => 'Tempeh',
+                        'portion' => sprintf('%dg', $tempehGrams),
+                        'calories' => round($tempehGrams * 1.93),
+                        'protein' => round($targetProtein),
+                        'fats' => round($tempehGrams * 0.11),
+                        'carbohydrates' => round($tempehGrams * 0.09)
+                    ];
+                } elseif ($proteinName === 'Hamburguesa de lentejas') {
+                    $hamburguesaGrams = round($targetProtein * 6);
+                    $options['Proteínas']['options'][] = [
+                        'name' => 'Hamburguesa de lentejas',
+                        'portion' => sprintf('%dg (2 unidades)', $hamburguesaGrams),
+                        'calories' => round($targetProtein * 7),
+                        'protein' => round($targetProtein),
+                        'fats' => round($targetProtein * 0.3),
+                        'carbohydrates' => round($targetProtein * 1.5)
+                    ];
+                }
+            }
+        }
+        // CARBOHIDRATOS - ⭐ FORZADO
+        $carbOptions = ['Arroz blanco', 'Papa', 'Quinua'];
+        $forcedCarbs = $this->getForcedFavoritesForMeal($mealName, 'Carbohidratos', $foodPreferences['carbs'] ?? []);
+        $carbOptions = $this->ensureForcedFavoritesInList($carbOptions, $forcedCarbs, $allergiesNorm, $dislikedNorm);
+        $carbOptions = $this->prioritizeFoodList($carbOptions, $foodPreferences['carbs'] ?? []);
+        $filteredCarbs = $this->getFilteredFoodOptions($carbOptions, $dislikedFoods, $allergies, 3);
+        if (!empty($filteredCarbs)) {
+            $options['Carbohidratos'] = ['options' => []];
+            foreach ($filteredCarbs as $carbName) {
+                $portionData = $this->calculateCarbPortionByFood($carbName, $targetCarbs);
+                if ($portionData) {
+                    $options['Carbohidratos']['options'][] = $portionData;
+                }
+            }
+        }
+    }
+    // GRASAS VEGANAS - ⭐ FORZADO
+    if ($isLowBudget) {
+        $fatOptions = ['Aceite vegetal', 'Maní', 'Aguacate'];
+    } else {
+        $fatOptions = ['Aceite de oliva extra virgen', 'Almendras', 'Aguacate hass'];
+    }
+    $forcedFats = $this->getForcedFavoritesForMeal($mealName, 'Grasas', $foodPreferences['fats'] ?? []);
+    $fatOptions = $this->ensureForcedFavoritesInList($fatOptions, $forcedFats, $allergiesNorm, $dislikedNorm);
+    $fatOptions = $this->prioritizeFoodList($fatOptions, $foodPreferences['fats'] ?? []);
+    $fatOptions = $this->getFilteredFoodOptions($fatOptions, $dislikedFoods, $allergies, count($fatOptions));
+    $filteredFats = $this->applyFoodPreferenceSystem($fatOptions, "{$mealName}-Grasas", '', 3);
+    if (!empty($filteredFats)) {
+        $options['Grasas'] = ['options' => []];
+        foreach ($filteredFats as $fatName) {
+            $portionData = $this->calculateFatPortionByFood($fatName, $targetFats, $isLowBudget);
+            if ($portionData) {
+                $options['Grasas']['options'][] = $portionData;
+            }
+        }
+    }
+    // Agregar metadata
+    foreach ($options as $category => &$categoryData) {
+        if (isset($categoryData['options'])) {
+            foreach ($categoryData['options'] as &$option) {
+                $this->addFoodMetadata($option, $isLowBudget);
+            }
+        }
+    }
+    return $options;
+}
 
 
     private function getDetailedBudgetInstructions($budget, $country): string
@@ -5458,8 +5488,10 @@ private function buildFavoritesPromptSection(array $foodPreferences, string $use
         $section .= "   " . implode(', ', $foodPreferences['fruits']) . "\n\n";
     }
 
-    $section .= "⚠️ **REGLA CRÍTICA DE PRIORIZACIÓN:**\n";
-    $section .= "- Los alimentos favoritos DEBEN aparecer como PRIMERAS opciones\n";
+    $section .= "⚠️ **REGLA CRÍTICA DE PRIORIZACIÓN - OBLIGATORIO:**\n";
+    $section .= "- Si el usuario seleccionó un alimento favorito, ESTE DEBE APARECER en al menos una comida principal (Desayuno, Almuerzo o Cena).\n";
+    $section .= "- NO excluyas alimentos favoritos por reglas internas (ej: si eligió 'Tortilla', ÚSALA en la Cena si es necesario).\n";
+    $section .= "- La preferencia del usuario tiene PRIORIDAD TOTAL sobre las restricciones de horario.\n";
     $section .= "- Si {$userName} eligió 'Atún' y 'Pollo', entonces:\n";
     $section .= "  ✅ Opción 1: Atún en lata (200g)\n";
     $section .= "  ✅ Opción 2: Pollo pechuga o muslo (180g)\n";
@@ -5481,21 +5513,22 @@ private function buildFavoritesPromptSection(array $foodPreferences, string $use
         $forcedFavorites = [];
 
         // ⭐ REGLAS: Qué favoritos van en qué comidas
+        // SE HAN RELAJADO LAS REGLAS PARA PERMITIR MÁS OPCIONES SI SON FAVORITAS
         $mealRules = [
             'proteins' => [
                 'Desayuno' => ['Yogurt Griego', 'Proteína Whey', 'Caseína', 'Huevo', 'Claras'],
                 'Almuerzo' => ['Pollo', 'Atún', 'Carne', 'Res', 'Pavo', 'Pescado'],
-                'Cena' => ['Pollo', 'Atún', 'Carne', 'Res', 'Pavo', 'Pescado'],
+                'Cena' => ['Pollo', 'Atún', 'Carne', 'Res', 'Pavo', 'Pescado', 'Huevo', 'Claras'], // Se agrega Huevo/Claras a Cena
                 'Snack' => ['Yogurt Griego', 'Proteína Whey', 'Caseína', 'Proteína en polvo']
             ],
             'carbs' => [
-                'Desayuno' => ['Avena', 'Pan', 'Tortilla'],
-                'Almuerzo' => ['Arroz', 'Papa', 'Camote', 'Quinua', 'Fideo', 'Pasta'],
-                'Cena' => ['Arroz', 'Papa', 'Camote', 'Quinua', 'Fideo', 'Pasta'],
-                'Snack' => ['Avena', 'Galletas', 'Cereal']
+                'Desayuno' => ['Avena', 'Pan', 'Tortilla', 'Galletas'],
+                'Almuerzo' => ['Arroz', 'Papa', 'Camote', 'Quinua', 'Fideo', 'Pasta', 'Tortilla', 'Pan'], // Se agregan Tortilla/Pan
+                'Cena' => ['Arroz', 'Papa', 'Camote', 'Quinua', 'Fideo', 'Pasta', 'Tortilla', 'Pan', 'Avena'], // Se agregan TODOS
+                'Snack' => ['Avena', 'Galletas', 'Cereal', 'Pan', 'Tortilla']
             ],
             'fats' => [
-                'Desayuno' => ['Aceite', 'Aguacate', 'Palta', 'Almendras', 'Nueces', 'Maní'],
+                'Desayuno' => ['Aceite', 'Aguacate', 'Palta', 'Almendras', 'Nueces', 'Maní', 'Mantequilla'],
                 'Almuerzo' => ['Aceite', 'Aguacate', 'Palta', 'Almendras', 'Nueces', 'Maní'],
                 'Cena' => ['Aceite', 'Aguacate', 'Palta', 'Almendras', 'Nueces', 'Maní'],
                 'Snack' => ['Maní', 'Mantequilla', 'Almendras', 'Nueces']
